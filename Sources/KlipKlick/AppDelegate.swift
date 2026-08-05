@@ -139,7 +139,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let button = statusItem?.button else { return }
         let zone = Settings.shared.resolvedTimeZone
         Self.clockFormatter.timeZone = zone
-        let title = Self.clockFormatter.string(from: Date())
+        let title = "\(TimeZoneFlags.shared.flag(for: zone.identifier))  "
+            + Self.clockFormatter.string(from: Date())
 
         // Setting the title unconditionally relayouts the menu bar every tick.
         guard title != lastClockTitle else { return }
@@ -364,20 +365,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func refreshTimeZoneMenu() {
         let selected = Settings.shared.menuBarTimeZone
 
+        let flags = TimeZoneFlags.shared
+
         for (identifier, item) in timeZoneItems {
             item.state = identifier == selected ? .on : .off
-            guard !identifier.isEmpty else { continue }
-            if let zone = TimeZone(identifier: identifier) {
-                item.title = "\(label(for: identifier, region: identifier.split(separator: "/").first.map(String.init))) — \(Self.offsetLabel(zone))"
-            }
+            guard !identifier.isEmpty, let zone = TimeZone(identifier: identifier) else { continue }
+            let region = identifier.split(separator: "/").first.map(String.init)
+            item.title = "\(flags.flag(for: identifier))  "
+                + "\(label(for: identifier, region: region)) — \(Self.offsetLabel(zone))"
         }
 
         let zone = Settings.shared.resolvedTimeZone
         let name = label(for: zone.identifier)
+        let flag = flags.flag(for: zone.identifier)
         let following = selected.isEmpty ? " (system)" : ""
-        selectedZoneHeader?.title = "\(name) — \(Self.offsetLabel(zone))\(following)"
-        timeZoneItems[""]?.title = "System default — \(label(for: TimeZone.current.identifier))"
-        timeZoneMenuItem?.title = "Timezone: \(name)"
+        selectedZoneHeader?.title = "\(flag)  \(name) — \(Self.offsetLabel(zone))\(following)"
+        timeZoneItems[""]?.title = "\(flags.flag(for: TimeZone.current.identifier))  "
+            + "System default — \(label(for: TimeZone.current.identifier))"
+        timeZoneMenuItem?.title = "Timezone: \(flag) \(name)"
     }
 
     private static func offsetLabel(_ zone: TimeZone) -> String {

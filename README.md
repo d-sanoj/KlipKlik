@@ -5,10 +5,10 @@ A lightweight status-bar clipboard manager for macOS. Keyboard-first, native, no
 It lives in the menu bar only — no Dock icon, no ⌘Tab entry. Double-tap ⌘ and a
 popup opens wherever your pointer is; type to search, ↩ to paste.
 
-The menu bar item is a clock, showing the time in whichever zone you pick, in
-12-hour format. Clicking it opens a short menu — **Clipboard**, **Settings**,
-**Timezone**, **Quit** — rather than the history itself; the history is on
-double-tap ⌘, ⇧⌘C, or the Clipboard item.
+The menu bar item is a clock, showing the country's flag and the time in
+whichever zone you pick, in 12-hour format. Clicking it opens a short menu —
+**Clipboard**, **Settings**, **Timezone**, **Quit** — rather than the history
+itself; the history is on double-tap ⌘, ⇧⌘C, or the Clipboard item.
 
 The UI implements the `Clipboard Manager.dc.html` Claude Design project: a 340pt
 popup, hover actions, and a five-tab preferences window — rendered on macOS 26
@@ -137,11 +137,12 @@ the list for the pinned shelf and back.
 
 ### Menu bar clock
 
-The status item shows the current time in 12-hour format, forced with a POSIX
-locale so it stays 12-hour on a Mac set to a 24-hour clock. **Timezone** in the
-menu lists every zone on the system — pick one anywhere in the world and the
-clock follows it. The choice persists across launches; an identifier that no
-longer exists falls back to the system zone rather than breaking the clock.
+The status item shows the country's flag and the current time in 12-hour
+format, forced with a POSIX locale so it stays 12-hour on a Mac set to a
+24-hour clock. **Timezone** in the menu lists every zone on the system — pick
+one anywhere in the world and the clock follows it. The choice persists across
+launches; an identifier that no longer exists falls back to the system zone
+rather than breaking the clock.
 
 The list is built from the zoneinfo tree, not `TimeZone.knownTimeZoneIdentifiers`
 — 597 zones against 443. The API drops the tz database's *links*, which are the
@@ -149,6 +150,15 @@ names people actually look for: it lists India only as `Asia/Calcutta` with no
 Kolkata, and omits `US/Eastern` and the explicit `Etc/GMT±N` offsets entirely.
 The canonical list is unioned in, so a change to the directory layout can never
 leave the picker empty.
+
+Flags come from the tz database's own `zone.tab`, which maps canonical zones to
+ISO 3166 country codes; the code is then offset into the regional indicator
+letters. `zone.tab` names only canonical zones, so an alias is matched by
+content instead — an alias file is a byte-for-byte copy of the zone it points
+at, which is how `Asia/Calcutta` resolves to 🇮🇳 and `US/Eastern` to 🇺🇸. Where
+one rule set is shared across countries the borrowed code would be a guess, so
+those get the 🌐 globe rather than a wrong flag, as do the offset-only zones
+like `UTC` and `Etc/GMT+5`. 526 of the 597 zones carry a flag.
 
 Zones are grouped by region, and regions over 40 entries are split into
 alphabetical runs that break on a change of initial letter — never mid-letter,
