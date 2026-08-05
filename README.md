@@ -10,8 +10,8 @@ whichever zone you pick, in 12-hour format. Clicking it opens a short menu —
 **Clipboard**, **Settings**, **Timezone**, **Quit** — rather than the history
 itself; the history is on double-tap ⌘, ⇧⌘C, or the Clipboard item.
 
-The UI implements the `Clipboard Manager.dc.html` Claude Design project: a 340pt
-popup, hover actions, and a five-tab preferences window — rendered on macOS 26
+The UI implements the `Clipboard Manager.dc.html` design: a 340pt popup, hover
+actions, and a five-tab preferences window — rendered on macOS 26
 Liquid Glass. The design's per-type chip glyphs are deliberately dropped: rows
 are text-only, which keeps the list tight, and a hover card carries the detail
 the glyphs used to.
