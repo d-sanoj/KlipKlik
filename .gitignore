@@ -1,0 +1,21 @@
+# SwiftPM build products
+.build/
+.swiftpm/
+Package.resolved
+
+# Assembled app bundle and its .dmg (Scripts/build_app.sh, Scripts/make_dmg.sh)
+build/
+*.dmg
+
+# Xcode
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Tooling and editor state
+.claude/
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
