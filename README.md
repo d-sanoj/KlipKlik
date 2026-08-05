@@ -5,6 +5,11 @@ A lightweight status-bar clipboard manager for macOS. Keyboard-first, native, no
 It lives in the menu bar only — no Dock icon, no ⌘Tab entry. Double-tap ⌘ and a
 popup opens wherever your pointer is; type to search, ↩ to paste.
 
+The menu bar item is a clock, showing the time in whichever zone you pick, in
+12-hour format. Clicking it opens a short menu — **Clipboard**, **Settings**,
+**Timezone**, **Quit** — rather than the history itself; the history is on
+double-tap ⌘, ⇧⌘C, or the Clipboard item.
+
 The UI implements the `Clipboard Manager.dc.html` Claude Design project: a 340pt
 popup, hover actions, and a five-tab preferences window — rendered on macOS 26
 Liquid Glass. The design's per-type chip glyphs are deliberately dropped: rows
@@ -130,6 +135,30 @@ the list for the pinned shelf and back.
 
 ## Features
 
+### Menu bar clock
+
+The status item shows the current time in 12-hour format, forced with a POSIX
+locale so it stays 12-hour on a Mac set to a 24-hour clock. **Timezone** in the
+menu lists every zone on the system — pick one anywhere in the world and the
+clock follows it. The choice persists across launches; an identifier that no
+longer exists falls back to the system zone rather than breaking the clock.
+
+The list is built from the zoneinfo tree, not `TimeZone.knownTimeZoneIdentifiers`
+— 597 zones against 443. The API drops the tz database's *links*, which are the
+names people actually look for: it lists India only as `Asia/Calcutta` with no
+Kolkata, and omits `US/Eastern` and the explicit `Etc/GMT±N` offsets entirely.
+The canonical list is unioned in, so a change to the directory layout can never
+leave the picker empty.
+
+Zones are grouped by region, and regions over 40 entries are split into
+alphabetical runs that break on a change of initial letter — never mid-letter,
+so there is no guessing whether *Kolkata* is under "D – K" or "K – S". Each
+entry carries its current UTC offset, and the top of the menu names the zone in
+force so the selection is readable without hunting for the checkmark.
+
+The clock ticks every 5 seconds and only redraws when the displayed minute
+actually changes.
+
 ### Strip formatting when pasting
 
 A toggle in **Preferences ▸ General**. When on, text pastes as plain text — the
@@ -166,7 +195,8 @@ Copying something else cancels a pending move. If the selection isn't files, cut
 mode does not arm at all, rather than arming a ⌘V interception that would do
 nothing.
 
-While a cut is pending the menu-bar glyph changes to **scissors**. Finder gives
+While a cut is pending a **scissors** glyph appears next to the menu-bar clock.
+Finder gives
 no indication of its own — the file does not dim the way Windows Explorer dims a
 cut file — so without this the feature is invisible and reads as broken even when
 it armed correctly.
@@ -246,8 +276,7 @@ popup anchor, history size, pinning, search, the daily purge.
 
 Still mockups: **Launch at login** (needs `SMAppService` registration) and the
 **Ignored Apps** list (password managers that mark the pasteboard as concealed
-are already ignored automatically). The menu-bar glyph is a placeholder pending
-the real logo.
+are already ignored automatically).
 
 ### Known characteristics
 

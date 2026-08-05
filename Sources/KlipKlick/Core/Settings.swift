@@ -55,6 +55,7 @@ final class Settings: ObservableObject {
         static let stripFormatting = "stripFormatting"
         static let finderCutMove = "finderCutMove"
         static let glassOpacity = "glassOpacity"
+        static let menuBarTimeZone = "menuBarTimeZone"
     }
 
     @Published var theme: ThemePreference {
@@ -115,6 +116,17 @@ final class Settings: ObservableObject {
         didSet { UserDefaults.standard.set(glassOpacity, forKey: Key.glassOpacity) }
     }
 
+    /// Time zone the menu-bar clock reads in. Empty means follow the Mac's own,
+    /// so the clock keeps working if a stored identifier ever disappears.
+    @Published var menuBarTimeZone: String {
+        didSet { UserDefaults.standard.set(menuBarTimeZone, forKey: Key.menuBarTimeZone) }
+    }
+
+    /// Resolved zone for the clock: the chosen one, or the system's.
+    var resolvedTimeZone: TimeZone {
+        TimeZone(identifier: menuBarTimeZone) ?? .current
+    }
+
     private init() {
         let defaults = UserDefaults.standard
         defaults.register(defaults: [
@@ -128,7 +140,8 @@ final class Settings: ObservableObject {
             Key.launchAtLogin: false,
             Key.stripFormatting: false,
             Key.finderCutMove: true,
-            Key.glassOpacity: 0.30
+            Key.glassOpacity: 0.30,
+            Key.menuBarTimeZone: ""
         ])
 
         theme = ThemePreference(rawValue: defaults.string(forKey: Key.theme) ?? "") ?? .auto
@@ -142,6 +155,7 @@ final class Settings: ObservableObject {
         stripFormatting = defaults.bool(forKey: Key.stripFormatting)
         finderCutMove = defaults.bool(forKey: Key.finderCutMove)
         glassOpacity = defaults.double(forKey: Key.glassOpacity)
+        menuBarTimeZone = defaults.string(forKey: Key.menuBarTimeZone) ?? ""
     }
 
     func applyAppearance() {
