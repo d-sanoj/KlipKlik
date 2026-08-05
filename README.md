@@ -145,11 +145,18 @@ launches; an identifier that no longer exists falls back to the system zone
 rather than breaking the clock.
 
 The list is built from the zoneinfo tree, not `TimeZone.knownTimeZoneIdentifiers`
-— 597 zones against 443. The API drops the tz database's *links*, which are the
+— 562 zones against 443. The API drops the tz database's *links*, which are the
 names people actually look for: it lists India only as `Asia/Calcutta` with no
-Kolkata, and omits `US/Eastern` and the explicit `Etc/GMT±N` offsets entirely.
-The canonical list is unioned in, so a change to the directory layout can never
-leave the picker empty.
+Kolkata, and omits `US/Eastern`, `Japan` and `Poland` entirely. The canonical
+list is unioned in, so a change to the directory layout can never leave the
+picker empty.
+
+The `Etc` region is deliberately left out. Its 35 entries are fixed offsets with
+no place attached, and their names run backwards by the POSIX convention —
+`Etc/GMT+5` is UTC−5 — so the name contradicts the offset shown beside it.
+Nothing is lost: the zero-offset members duplicate the plain `UTC` and `GMT`
+under **Other**, and the numeric ones are whole hours only, so they could never
+express a zone like India's UTC+5:30 anyway.
 
 Flags come from the tz database's own `zone.tab`, which maps canonical zones to
 ISO 3166 country codes; the code is then offset into the regional indicator
@@ -157,8 +164,8 @@ letters. `zone.tab` names only canonical zones, so an alias is matched by
 content instead — an alias file is a byte-for-byte copy of the zone it points
 at, which is how `Asia/Calcutta` resolves to 🇮🇳 and `US/Eastern` to 🇺🇸. Where
 one rule set is shared across countries the borrowed code would be a guess, so
-those get the 🌐 globe rather than a wrong flag, as do the offset-only zones
-like `UTC` and `Etc/GMT+5`. 526 of the 597 zones carry a flag.
+those get the 🌐 globe rather than a wrong flag, as do the placeless zones like
+`UTC` and `GMT`. 526 of the 562 zones carry a flag.
 
 Zones are grouped by region, and regions over 40 entries are split into
 alphabetical runs that break on a change of initial letter — never mid-letter,

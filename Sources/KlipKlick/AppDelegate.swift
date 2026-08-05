@@ -339,11 +339,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// and the canonical list is unioned in so a layout change can never leave
     /// the picker empty.
     private static func allTimeZoneIdentifiers() -> [String] {
-        var names = Set(TimeZone.knownTimeZoneIdentifiers)
+        var names = Set(TimeZone.knownTimeZoneIdentifiers.filter { !$0.hasPrefix("Etc/") })
 
         // Not zones: POSIX/right variants duplicate the tree, the rest are data
         // files that happen to live alongside it.
-        let excludedRoots: Set<String> = ["posix", "right", "Factory", "SystemV"]
+        //
+        // Etc is dropped too, though its entries are real. They are fixed
+        // offsets with no place attached, and their names run backwards by the
+        // POSIX convention — Etc/GMT+5 is UTC-5 — which puts the name at odds
+        // with the offset shown beside it. Nothing is lost: the zero-offset
+        // members duplicate the plain UTC and GMT under "Other", and picking a
+        // raw offset is not what a clock that names a place is for.
+        let excludedRoots: Set<String> = ["posix", "right", "Factory", "SystemV", "Etc"]
         let roots = ["/var/db/timezone/zoneinfo", "/usr/share/zoneinfo"]
 
         for root in roots {
