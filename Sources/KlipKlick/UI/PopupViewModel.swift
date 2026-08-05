@@ -29,6 +29,8 @@ final class PopupViewModel: ObservableObject {
     var onActivate: ((ClipboardItem, Bool) -> Void)?
     var onClose: (() -> Void)?
     var onOpenPreferences: (() -> Void)?
+    var onPickColor: (() -> Void)?
+    var onGrabText: (() -> Void)?
 
     private var cancellables = Set<AnyCancellable>()
 

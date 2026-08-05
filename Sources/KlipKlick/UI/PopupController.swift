@@ -17,6 +17,7 @@ final class PopupController: NSObject, NSWindowDelegate {
 
     private let panel: PopupPanel
     private let detailCard = DetailCardWindow()
+    private let regionSelector = RegionSelector()
     /// Pending first appearance of the detail card, cancelled if focus moves on.
     private var detailDelay: DispatchWorkItem?
     private var detailItemID: UUID?
@@ -78,6 +79,8 @@ final class PopupController: NSObject, NSWindowDelegate {
         }
         viewModel.onClose = { [weak self] in self?.hide() }
         viewModel.onOpenPreferences = { [weak self] in self?.onOpenPreferences?() }
+        viewModel.onPickColor = { [weak self] in self?.pickColor() }
+        viewModel.onGrabText = { [weak self] in self?.grabText() }
 
         // The list reports the focused row's position; the card follows it,
         // whether focus moved by pointer or by arrow key.
@@ -87,6 +90,95 @@ final class PopupController: NSObject, NSWindowDelegate {
                 DispatchQueue.main.async { self?.updateDetailCard(row) }
             }
             .store(in: &cancellables)
+    }
+
+    // MARK: Colour picker
+
+    /// Hides the popup, samples a pixel, then comes back with the hex on the
+    /// clipboard — and in history, since the write is left for ClipboardMonitor
+    /// to pick up like any other copy.
+    ///
+    /// Hiding first is not cosmetic: the popup sits under the pointer, so a
+    /// loupe opened over it would sample the popup's own glass.
+    private func pickColor() {
+        hide()
+        // A beat for the panel to actually leave the screen before the loupe
+        // starts reading pixels from underneath it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            ColorSampler.pick { hex in
+                guard hex != nil else { return }
+                // Reopen so the new swatch is visible at the top of history —
+                // otherwise a successful pick looks like nothing happened.
+                self?.show()
+            }
+        }
+    }
+
+    // MARK: Text grab
+
+    /// Dims the screen, takes the dragged rectangle, and copies the text read
+    /// out of it. Same shape as the colour picker: the popup gets out of the way
+    /// first, or it would be part of what you are selecting over.
+    private func grabText() {
+        // Checked before dimming: prompting after the user has already dragged
+        // a box wastes the gesture.
+        guard TextGrab.isPermitted else {
+            hide()
+            // On the very first attempt macOS puts up its own dialog; stacking
+            // ours on top of it just buries the button that matters.
+            if !TextGrab.promptIfNeverAsked() { reportGrabFailure(.needsPermission) }
+            return
+        }
+
+        hide()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self else { return }
+            regionSelector.begin { [weak self] rect in
+                guard let self, let rect else { return }
+                // A beat for the overlay to come down, so the dim and the
+                // selection border stay out of the captured pixels.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                    TextGrab.grab(rect: rect) { [weak self] result in
+                        switch result {
+                        case .success:
+                            // Reopen so the grabbed text is visible at the top
+                            // of history — the only sign it worked.
+                            self?.show()
+                        case .failure(let error):
+                            self?.reportGrabFailure(error)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Silence would be indistinguishable from a grab that worked, so say so.
+    private func reportGrabFailure(_ error: TextGrab.Failure) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        switch error {
+        case .noTextFound:
+            alert.messageText = "No text found"
+            alert.informativeText = "Nothing readable in that selection. Try a tighter crop, "
+                + "or one that includes more of the line."
+        case .captureFailed:
+            alert.messageText = "Couldn't capture the screen"
+            alert.informativeText = "macOS refused the screenshot. Try again, or check Screen "
+                + "Recording in System Settings ▸ Privacy & Security."
+        case .needsPermission:
+            alert.messageText = "KlipKlick needs Screen Recording"
+            alert.informativeText = "Reading text off the screen means reading its pixels, which "
+                + "macOS gates behind Screen Recording. Grant it, then relaunch KlipKlick — the "
+                + "permission only takes effect on a fresh launch."
+            alert.addButton(withTitle: "Open Settings…")
+            alert.addButton(withTitle: "Later")
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        if error == .needsPermission, response == .alertFirstButtonReturn {
+            TextGrab.openSettingsPane()
+        }
     }
 
     // MARK: Detail card

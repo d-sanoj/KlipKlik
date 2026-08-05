@@ -130,8 +130,12 @@ Linger on a row and a small card appears beside the popup with the item's type,
 the app it was copied from, and the time. It follows the arrow keys as well as
 the pointer, so it works without a mouse.
 
-Pinned items are not mixed into the list. The footer's **Pinned** button swaps
-the list for the pinned shelf and back.
+Pinned items are not mixed into the list. **Pinned** on the right of the footer
+swaps the list for the pinned shelf and back — plain text that lights up accent
+on hover, the way **Clear** on the left turns red. The eyedropper between them
+picks a colour off the screen, and the one beside it grabs text out of it.
+Preferences are not in the footer: they are **Settings** in the menu bar menu,
+or ⌘, with the popup open.
 
 ## Features
 
@@ -175,6 +179,64 @@ force so the selection is readable without hunting for the checkmark.
 
 The clock ticks every 5 seconds and only redraws when the displayed minute
 actually changes.
+
+### Pick a colour from the screen
+
+The eyedropper in the footer opens the system loupe — the same magnifier the
+colour well uses, so the pixel grid and escape-to-cancel come with it. Click a
+pixel and its hex lands on the clipboard as `#RRGGBB`.
+
+The popup hides first and comes back after. That is not cosmetic: the popup sits
+under the pointer, so a loupe opened over it would sample the popup's own glass.
+Reopening afterwards puts the new swatch at the top of history, which is the only
+sign the pick worked.
+
+The write is deliberately *not* registered as one of KlipKlick's own, so
+`ClipboardMonitor` captures it and the colour joins history like any other copy.
+
+Colours come back through sRGB, so a wide-gamut screen still yields the hex you
+would paste into CSS: sampling a `#FF0000` div on a Display P3 screen gives
+`#FF0000`, not the `#EA3323` the panel is physically driving.
+
+### Grab text off the screen
+
+The second footer icon dims the screen and lets you drag a box round anything
+readable — a screenshot someone sent you, a video still, a window you cannot
+select text in. What lands on the clipboard is the **text**, not the picture.
+Escape, or a click without a drag, cancels.
+
+Recognition is Vision's, with **language correction turned off**. It is tuned
+for prose and rewrites anything that is not a dictionary word — identifiers,
+flags, hex, punctuation runs — which is precisely what you grab a screen of code
+for.
+
+**Layout is reconstructed**, because Vision returns an unordered bag of text
+fragments with bounding boxes: join the strings and you keep the words but lose
+the shape. Instead a median character width is measured from the longer
+fragments, and everything else is sized against it — indentation from each row's
+distance to the leftmost fragment, inter-word gaps from the space between
+boxes, blank lines from a row gap wider than the median line pitch. Fragments
+are grouped into rows by vertical overlap rather than exact baseline, so a pixel
+of jitter cannot stack two words. Grabbing an eight-line indented Swift function
+returns it byte-for-byte, blank line included.
+
+Two guards: a gap is capped at 60 spaces, so one far-right fragment in a wide
+selection cannot emit a line of hundreds of them, and blank runs are capped at
+three. The reconstruction is visual, so indentation always comes back as spaces
+— tab-indented source returns space-indented.
+
+This needs **Screen Recording**: reading text off the screen means reading its
+pixels, and that is what the permission gates. Shelling out to
+`/usr/sbin/screencapture` does not dodge it — TCC attributes the capture to the
+app that spawned it — so the capture is ScreenCaptureKit, taken at the display's
+real backing scale, which is what makes small text legible to the recogniser.
+The permission is checked *before* the screen dims, so a missing grant does not
+waste the gesture, and macOS's own prompt is left to speak for itself the first
+time rather than being buried under an alert of ours.
+
+> Screen Recording goes stale on every rebuild for the same reason Accessibility
+> does — see the ad-hoc signing note above — and only takes effect on a fresh
+> launch.
 
 ### Strip formatting when pasting
 
@@ -236,7 +298,7 @@ boundary hasn't been handled yet. Waking from sleep and opening the popup both
 trigger a check, so a laptop opened at 9 AM clears on wake.
 
 The daily clear removes **everything, including pinned items** — it is a
-force-clear. The footer's "Clear History" keeps pinned items; Storage ▸ "Clear
+force-clear. The footer's "Clear" keeps pinned items; Storage ▸ "Clear
 All History" does not.
 
 Content marked with the [nspasteboard.org](http://nspasteboard.org) concealed or
@@ -274,6 +336,10 @@ Sources/KlipKlick/
     DoubleTapCommandMonitor.swift
     CarbonHotKey.swift          Permission-free hot keys
     FinderCutMove.swift         ⌘X cut-and-move
+    ColorSampler.swift          Screen colour pick -> hex
+    RegionSelector.swift        Dimming drag-to-select overlay
+    TextGrab.swift              Region capture, OCR, layout rebuild
+    TimeZoneFlags.swift         Zone -> country flag, via zone.tab
     Paster.swift                Synthesised keystrokes + permission helpers
     Settings.swift              UserDefaults-backed preferences
   UI/
