@@ -238,6 +238,50 @@ time rather than being buried under an alert of ours.
 > does — see the ad-hoc signing note above — and only takes effect on a fresh
 > launch.
 
+### Launch at login
+
+**Preferences ▸ General ▸ Launch at login** registers the app with
+`SMAppService.mainApp` — the app registers itself, macOS owns the record, and it
+shows up in **System Settings ▸ General ▸ Login Items** like any other.
+
+macOS is the source of truth, not a preference of ours. A stored copy would
+drift the moment someone revoked the item in System Settings, so the switch
+reads its state back from `SMAppService.status` — on launch, when the window
+appears, and every time it is reopened. If registration fails the switch returns
+to where it was, because it reports the system's state and the system just
+refused to change it, and the reason is shown underneath.
+
+macOS may accept a registration but hold it pending approval. That shows as
+*Waiting for your approval in System Settings*, with a button that jumps
+straight to Login Items.
+
+> Ad-hoc signing bites here too: the login item records the bundle it was
+> registered from, so rebuilding leaves a stale entry pointing at the old
+> binary. Toggle it off before a rebuild, or re-register afterwards.
+
+### Ignored apps
+
+**Preferences ▸ Ignored Apps** holds a list of apps whose copies never reach
+history. Add them with a file picker; each row shows the app's real icon and
+name, and an × removes it.
+
+Apps are stored by **bundle identifier**, not by name or path, so renaming an
+app or keeping a second copy in another folder cannot quietly stop the rule
+matching. An entry whose app is no longer installed keeps working and shows the
+identifier marked *Not installed*, rather than vanishing from the list.
+
+This is separate from, and on top of, the automatic skip: anything marking the
+pasteboard as concealed — which most password managers do — is dropped whether
+or not it is listed. The list is for everything else, like terminals and note
+apps.
+
+The check has one wrinkle worth knowing. Because detection is polled, the
+frontmost app is read up to 0.4s after the ⌘C, so someone who copies and
+immediately switches away would have the copy attributed to the app they
+switched *to*. The ignore check therefore looks at the previous tick as well,
+and drops the item if **either** app is on the list. A fast switch loses a
+clipboard entry, which is the right way to be wrong about a password manager.
+
 ### Strip formatting when pasting
 
 A toggle in **Preferences ▸ General**. When on, text pastes as plain text — the
@@ -354,12 +398,7 @@ Sources/KlipKlick/
 
 ## Status
 
-Wired up: strip formatting, auto-paste, Finder cut-and-move, theme, popup size,
-popup anchor, history size, pinning, search, the daily purge.
-
-Still mockups: **Launch at login** (needs `SMAppService` registration) and the
-**Ignored Apps** list (password managers that mark the pasteboard as concealed
-are already ignored automatically).
+Everything in Preferences is wired up. Nothing is a mockup any more.
 
 ### Known characteristics
 

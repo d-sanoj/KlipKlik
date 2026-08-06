@@ -51,11 +51,11 @@ final class Settings: ObservableObject {
         static let popupSize = "popupSize"
         static let anchorMode = "anchorMode"
         static let historySize = "historySize"
-        static let launchAtLogin = "launchAtLogin"
         static let stripFormatting = "stripFormatting"
         static let finderCutMove = "finderCutMove"
         static let glassOpacity = "glassOpacity"
         static let menuBarTimeZone = "menuBarTimeZone"
+        static let ignoredApps = "ignoredApps"
     }
 
     @Published var theme: ThemePreference {
@@ -94,9 +94,39 @@ final class Settings: ObservableObject {
         didSet { UserDefaults.standard.set(historySize, forKey: Key.historySize) }
     }
 
-    /// Mockup only — wiring this needs `SMAppService` registration.
+    /// Backed by `SMAppService`, not by UserDefaults: macOS owns this record,
+    /// and the user can revoke it in System Settings without telling us. A
+    /// stored copy would drift, so the value is read back from the service.
     @Published var launchAtLogin: Bool {
-        didSet { UserDefaults.standard.set(launchAtLogin, forKey: Key.launchAtLogin) }
+        didSet {
+            guard !isSyncingLaunchAtLogin else { return }
+            do {
+                try LaunchAtLogin.set(launchAtLogin)
+                launchAtLoginError = nil
+            } catch {
+                launchAtLoginError = LaunchAtLogin.explain(error)
+                // Put the switch back where it was: it reports the system's
+                // state, and the system just refused to change.
+                setLaunchAtLoginWithoutSyncing(oldValue)
+            }
+        }
+    }
+
+    /// Set when a registration attempt failed, for the preferences pane to show.
+    @Published var launchAtLoginError: String?
+
+    private var isSyncingLaunchAtLogin = false
+
+    /// Re-reads the system's answer — call when the preferences window appears,
+    /// since the switch may have been flipped in System Settings meanwhile.
+    func refreshLaunchAtLogin() {
+        setLaunchAtLoginWithoutSyncing(LaunchAtLogin.isEnabled)
+    }
+
+    private func setLaunchAtLoginWithoutSyncing(_ value: Bool) {
+        isSyncingLaunchAtLogin = true
+        launchAtLogin = value
+        isSyncingLaunchAtLogin = false
     }
 
     /// Paste text as plain text, discarding fonts, colours, and links — the
@@ -122,6 +152,16 @@ final class Settings: ObservableObject {
         didSet { UserDefaults.standard.set(menuBarTimeZone, forKey: Key.menuBarTimeZone) }
     }
 
+    /// Bundle identifiers whose copies never reach history.
+    @Published var ignoredApps: [String] {
+        didSet { UserDefaults.standard.set(ignoredApps, forKey: Key.ignoredApps) }
+    }
+
+    func isIgnored(_ bundleID: String?) -> Bool {
+        guard let bundleID else { return false }
+        return ignoredApps.contains(bundleID)
+    }
+
     /// Resolved zone for the clock: the chosen one, or the system's.
     var resolvedTimeZone: TimeZone {
         TimeZone(identifier: menuBarTimeZone) ?? .current
@@ -137,11 +177,11 @@ final class Settings: ObservableObject {
             Key.popupSize: PopupSize.regular.rawValue,
             Key.anchorMode: AnchorMode.cursor.rawValue,
             Key.historySize: 500,
-            Key.launchAtLogin: false,
             Key.stripFormatting: false,
             Key.finderCutMove: true,
             Key.glassOpacity: 0.30,
-            Key.menuBarTimeZone: ""
+            Key.menuBarTimeZone: "",
+            Key.ignoredApps: [String]()
         ])
 
         theme = ThemePreference(rawValue: defaults.string(forKey: Key.theme) ?? "") ?? .auto
@@ -151,11 +191,12 @@ final class Settings: ObservableObject {
         popupSize = PopupSize(rawValue: defaults.string(forKey: Key.popupSize) ?? "") ?? .regular
         anchorMode = AnchorMode(rawValue: defaults.string(forKey: Key.anchorMode) ?? "") ?? .cursor
         historySize = defaults.integer(forKey: Key.historySize)
-        launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
+        launchAtLogin = LaunchAtLogin.isEnabled
         stripFormatting = defaults.bool(forKey: Key.stripFormatting)
         finderCutMove = defaults.bool(forKey: Key.finderCutMove)
         glassOpacity = defaults.double(forKey: Key.glassOpacity)
         menuBarTimeZone = defaults.string(forKey: Key.menuBarTimeZone) ?? ""
+        ignoredApps = defaults.stringArray(forKey: Key.ignoredApps) ?? []
     }
 
     func applyAppearance() {

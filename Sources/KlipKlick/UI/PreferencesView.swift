@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum PrefsTab: String, CaseIterable, Identifiable {
     case general, shortcuts, appearance, ignored, storage
@@ -12,6 +13,72 @@ enum PrefsTab: String, CaseIterable, Identifiable {
         case .appearance: return "Appearance"
         case .ignored: return "Ignored Apps"
         case .storage: return "Storage"
+        }
+    }
+}
+
+/// One entry in the ignored list: the app's real icon and name, resolved from
+/// its bundle identifier.
+private struct IgnoredAppRow: View {
+    let bundleID: String
+    let palette: Palette
+    let onRemove: () -> Void
+
+    @State private var isHovering = false
+
+    /// nil once an app is uninstalled — the rule stays, it just cannot be
+    /// prettified, so the identifier is shown instead of dropping the row.
+    private var url: URL? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+    }
+
+    /// The bundle's own display name, not the filename — `displayName(atPath:)`
+    /// keeps the ".app" when the user has "show all extensions" turned on.
+    private var name: String {
+        guard let url else { return bundleID }
+        let info = Bundle(url: url)?.infoDictionary
+        let declared = (info?["CFBundleDisplayName"] ?? info?["CFBundleName"]) as? String
+        return declared ?? url.deletingPathExtension().lastPathComponent
+    }
+
+    var body: some View {
+        HStack {
+            HStack(spacing: 8) {
+                if let url {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                        .resizable()
+                        .frame(width: 20, height: 20)
+                } else {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(palette.searchBackground)
+                        .frame(width: 20, height: 20)
+                }
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name).prefLabel(palette)
+                    if url == nil {
+                        Text("Not installed")
+                            .font(.system(size: 10))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                }
+            }
+
+            Spacer()
+
+            Button(action: onRemove) {
+                Text("×")
+                    .font(.system(size: 15))
+                    .foregroundStyle(isHovering ? palette.danger : palette.textTertiary)
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovering = $0 }
+            .help("Stop ignoring \(name)")
+        }
+        .padding(.vertical, 8)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(palette.divider).frame(height: 1)
         }
     }
 }
@@ -61,6 +128,7 @@ struct PreferencesView: View {
                 fallbackMaterial: .windowBackground
             )
         )
+        .onAppear { settings.refreshLaunchAtLogin() }
     }
 
     private var tabBar: some View {
@@ -163,10 +231,30 @@ struct PreferencesView: View {
                 SwitchToggle(isOn: $settings.launchAtLogin, palette: palette)
             }
 
-            MockupNote(
-                text: "Launch at login is not wired up yet — it needs a login-item registration.",
-                palette: palette
+            Caption(
+                "Registers KlipKlick as a login item with macOS. Revoke it here or in "
+                    + "System Settings ▸ General ▸ Login Items — this switch reads back "
+                    + "whichever you used.",
+                palette: palette,
+                dividing: false
             )
+
+            if let error = settings.launchAtLoginError {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
+            } else if settings.launchAtLogin, LaunchAtLogin.needsApproval {
+                HStack(spacing: 8) {
+                    Text("Waiting for your approval in System Settings.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.textTertiary)
+                    Button("Open Login Items") { LaunchAtLogin.openLoginItemsSettings() }
+                        .font(.system(size: 11))
+                }
+                .padding(.top, 2)
+            }
         }
     }
 
@@ -365,43 +453,70 @@ struct PreferencesView: View {
                 .foregroundStyle(palette.textSecondary)
                 .padding(.bottom, 10)
 
-            ForEach(["1Password", "Terminal"], id: \.self) { name in
-                HStack {
-                    HStack(spacing: 8) {
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(palette.searchBackground)
-                            .frame(width: 20, height: 20)
-                        Text(name).prefLabel(palette)
-                    }
-                    Spacer()
-                    Text("×")
-                        .font(.system(size: 14))
-                        .foregroundStyle(palette.textTertiary)
-                }
-                .padding(.vertical, 8)
-                .overlay(alignment: .bottom) {
-                    Rectangle().fill(palette.divider).frame(height: 1)
+            if settings.ignoredApps.isEmpty {
+                Text("No apps ignored.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.vertical, 10)
+            }
+
+            ForEach(settings.ignoredApps, id: \.self) { bundleID in
+                IgnoredAppRow(bundleID: bundleID, palette: palette) {
+                    settings.ignoredApps.removeAll { $0 == bundleID }
                 }
             }
 
-            Text("+ Add Application…")
-                .font(.system(size: 12))
-                .foregroundStyle(palette.textSecondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(
-                            palette.divider,
-                            style: StrokeStyle(lineWidth: 1, dash: [4, 3])
-                        )
-                )
-                .padding(.top, 12)
+            Button(action: addIgnoredApps) {
+                Text("+ Add Application…")
+                    .font(.system(size: 12))
+                    .foregroundStyle(palette.textSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(
+                                palette.divider,
+                                style: StrokeStyle(lineWidth: 1, dash: [4, 3])
+                            )
+                    )
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 12)
 
-            MockupNote(
-                text: "This list is a mockup. Password managers that mark the pasteboard as concealed are already ignored automatically.",
-                palette: palette
+            Caption(
+                "Apps that mark the pasteboard as concealed — most password managers do — are "
+                    + "skipped automatically whether or not they are listed here. This list is "
+                    + "for everything else: terminals, note apps, anything you would rather not "
+                    + "keep a history of.",
+                palette: palette,
+                dividing: false
             )
+            .padding(.top, 4)
+        }
+    }
+
+    /// Picks one or more apps and records their bundle identifiers. Identifiers
+    /// rather than names, so a rename or a second copy in another folder cannot
+    /// quietly stop the rule from matching.
+    private func addIgnoredApps() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Ignore"
+        panel.message = "Choose apps whose copies should never be recorded."
+
+        // An accessory app has no windows of its own to bring forward, so the
+        // panel would open behind whatever is frontmost.
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK else { return }
+
+        for url in panel.urls {
+            guard let bundleID = Bundle(url: url)?.bundleIdentifier,
+                  !settings.ignoredApps.contains(bundleID)
+            else { continue }
+            settings.ignoredApps.append(bundleID)
         }
     }
 
@@ -646,6 +761,9 @@ final class PreferencesWindowController: NSWindowController {
     }
 
     func show() {
+        // The login item can be revoked in System Settings while the window is
+        // closed, so re-read it rather than trusting what the switch last showed.
+        Settings.shared.refreshLaunchAtLogin()
         // An accessory app has no Dock icon, so it must activate explicitly or
         // the preferences window opens behind whatever the user was using.
         NSApp.activate(ignoringOtherApps: true)

@@ -11,6 +11,8 @@ final class ClipboardMonitor {
     /// Change counts produced by our own writes, so restoring an item doesn't
     /// bounce straight back into the history as a "new" copy.
     private var selfWrittenChangeCounts: Set<Int> = []
+    /// Frontmost app as of the previous tick, for the ignore-list lookback.
+    private var previousFrontmost: FrontmostApp?
 
     init(store: HistoryStore) {
         self.store = store
@@ -40,13 +42,27 @@ final class ClipboardMonitor {
 
     private func poll() {
         let pasteboard = NSPasteboard.general
+        let frontmost = Self.frontmostApp()
+        // Remembered even on ticks with no change, so the next change can look
+        // back one interval.
+        defer { previousFrontmost = frontmost }
+
         let current = pasteboard.changeCount
         guard current != lastChangeCount else { return }
         lastChangeCount = current
 
         if selfWrittenChangeCounts.remove(current) != nil { return }
 
-        guard let item = ClipboardItem.capture(from: pasteboard, sourceApp: Self.sourceAppName())
+        // Ignored apps. The frontmost app is read up to `interval` after the
+        // ⌘C, so someone who copies and immediately switches away would
+        // otherwise have the copy credited — and recorded — against the app
+        // they switched *to*. Checking the previous tick as well means a fast
+        // switch drops the item rather than storing it, which is the safe way
+        // to be wrong about a password manager.
+        let recent = [frontmost, previousFrontmost].compactMap(\.self)
+        if recent.contains(where: { Settings.shared.isIgnored($0.bundleID) }) { return }
+
+        guard let item = ClipboardItem.capture(from: pasteboard, sourceApp: frontmost?.name)
         else { return }
         if ProcessInfo.processInfo.environment["KLIPKLICK_DEBUG"] != nil {
             FileHandle.standardError.write(
@@ -57,13 +73,16 @@ final class ClipboardMonitor {
         store.insert(item)
     }
 
-    /// Who to credit the copy to. Polling means this is read up to `interval`
-    /// after the ⌘C, so a fast app switch can misattribute an item — the name is
-    /// informational only, and nothing depends on it being right.
-    private static func sourceAppName() -> String? {
+    struct FrontmostApp {
+        let name: String?
+        let bundleID: String?
+    }
+
+    /// Who to credit the copy to, and who to check against the ignore list.
+    private static func frontmostApp() -> FrontmostApp? {
         guard let app = NSWorkspace.shared.frontmostApplication,
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier
         else { return nil }
-        return app.localizedName
+        return FrontmostApp(name: app.localizedName, bundleID: app.bundleIdentifier)
     }
 }
