@@ -163,7 +163,7 @@ struct PreferencesView: View {
             }
 
             Caption(
-                "Plain text, like ⌘⇧V. ⌥⇧ inverts it for one paste.",
+                "Plain text, like ⌘ ⇧ V. Hold ⌥ ⇧ to invert it for one paste.",
                 palette: palette,
                 dividing: true
             )
@@ -179,13 +179,13 @@ struct PreferencesView: View {
     private var behaviourSection: some View {
         VStack(spacing: 0) {
             PrefRow(palette: palette, showsDivider: false) {
-                Text("⌘X cuts files in Finder").prefLabel(palette)
+                Text("⌘ X cuts files in Finder").prefLabel(palette)
             } trailing: {
                 SwitchToggle(isOn: $settings.finderCutMove, palette: palette)
             }
 
             Caption(
-                "⌘X marks, ⌘V moves. Needs Accessibility.",
+                "⌘ X marks, ⌘ V moves. Needs Accessibility.",
                 palette: palette,
                 dividing: true
             )
@@ -316,8 +316,8 @@ struct PreferencesView: View {
 
             Text(
                 isTrusted
-                    ? "Double-tap ⌘, auto-paste, and ⌘X cut-and-move are active."
-                    : "Double-tap ⌘, auto-paste, and ⌘X cut-and-move are all inactive "
+                    ? "Double-tap ⌘, auto-paste, and ⌘ X cut-and-move are active."
+                    : "Double-tap ⌘, auto-paste, and ⌘ X cut-and-move are all inactive "
                         + "until this is granted."
             )
             .font(.system(size: 11))

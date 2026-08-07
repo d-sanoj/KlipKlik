@@ -147,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         lastClockTitle = title
         button.title = title
         button.toolTip = cutPending
-            ? "Cut pending — press ⌘V in another folder to move"
+            ? "Cut pending — press ⌘ V in another folder to move"
             : "KlipKlick — \(zone.identifier.replacingOccurrences(of: "_", with: " "))"
     }
 
