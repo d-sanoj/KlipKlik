@@ -113,8 +113,8 @@ struct PreferencesView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 26)
-                .padding(.vertical, 18)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 14)
             }
         }
         .frame(width: 560, height: 420)
@@ -163,10 +163,7 @@ struct PreferencesView: View {
             }
 
             Caption(
-                "Pastes text as plain text, like ⌘⇧V. Applied when pasting, not when copying — "
-                    + "history keeps every original flavour, so turning this off restores full "
-                    + "formatting. Hold ⌥⇧ while choosing an item to invert it just once. "
-                    + "Images and files are unaffected.",
+                "Plain text, like ⌘⇧V. ⌥⇧ inverts it for one paste.",
                 palette: palette,
                 dividing: true
             )
@@ -188,9 +185,7 @@ struct PreferencesView: View {
             }
 
             Caption(
-                "Windows-style cut and move: ⌘X marks the selection, then ⌘V in another folder "
-                    + "moves it instead of copying. Finder performs the move itself, so its "
-                    + "conflict handling and undo still apply. Needs Accessibility.",
+                "⌘X marks, ⌘V moves. Needs Accessibility.",
                 palette: palette,
                 dividing: true
             )
@@ -231,14 +226,6 @@ struct PreferencesView: View {
                 SwitchToggle(isOn: $settings.launchAtLogin, palette: palette)
             }
 
-            Caption(
-                "Registers KlipKlick as a login item with macOS. Revoke it here or in "
-                    + "System Settings ▸ General ▸ Login Items — this switch reads back "
-                    + "whichever you used.",
-                palette: palette,
-                dividing: false
-            )
-
             if let error = settings.launchAtLoginError {
                 Text(error)
                     .font(.system(size: 11))
@@ -271,7 +258,7 @@ struct PreferencesView: View {
             PrefRow(palette: palette, showsDivider: true) {
                 Text("Alternate shortcut").prefLabel(palette)
             } trailing: {
-                KeyChip(text: "⇧⌘C", palette: palette, muted: false, monospaced: true)
+                KeyChip(text: "⇧ ⌘ C", palette: palette, muted: false, monospaced: true)
             }
 
             PrefRow(palette: palette, showsDivider: true) {
@@ -283,10 +270,10 @@ struct PreferencesView: View {
             PrefRow(palette: palette, showsDivider: true) {
                 Text("Cut files in Finder").prefLabel(palette)
             } trailing: {
-                KeyChip(text: "⌘X", palette: palette, muted: false, monospaced: true)
+                KeyChip(text: "⌘ X", palette: palette, muted: false, monospaced: true)
             }
 
-            Text("Custom shortcut recording is coming in a future update.")
+            Text("Custom shortcuts coming later.")
                 .font(.system(size: 12))
                 .italic()
                 .foregroundStyle(palette.textTertiary)
@@ -338,10 +325,7 @@ struct PreferencesView: View {
             .fixedSize(horizontal: false, vertical: true)
 
             Text(
-                "The grant is tied to the app's code signature, which changes every time the app "
-                    + "is rebuilt. That leaves a row in System Settings that looks enabled but no "
-                    + "longer matches, and toggling it off and on does not fix it. "
-                    + "“Reset permission” clears that stale entry and re-asks."
+                "Tied to the code signature, so rebuilding stales it. Reset clears it."
             )
             .font(.system(size: 11))
             .foregroundStyle(palette.textTertiary)
@@ -381,11 +365,11 @@ struct PreferencesView: View {
     private static let popupShortcuts: [(String, String)] = [
         ("Navigate", "↑ ↓"),
         ("Paste selected", "↩"),
-        ("Invert strip formatting", "⌥⇧↩"),
-        ("Paste nth item", "⌘1…⌘9"),
-        ("Pin / unpin", "⌥P"),
-        ("Delete item", "⌘⌫"),
-        ("Clear history", "⌥⌘⌫"),
+        ("Invert strip formatting", "⌥ ⇧ ↩"),
+        ("Paste nth item", "⌘ 1 … ⌘ 9"),
+        ("Pin / unpin", "⌥ P"),
+        ("Delete item", "⌘ ⌫"),
+        ("Clear history", "⌥ ⌘ ⌫"),
         ("Close", "esc")
     ]
 
@@ -429,18 +413,10 @@ struct PreferencesView: View {
             }
 
             Caption(
-                "Fully clear is bare frosted glass — colour and light from behind still come "
-                    + "through. Fully solid is an opaque panel. The backdrop is blurred past "
-                    + "legibility at every setting, so whatever is behind the popup can never "
-                    + "be read no matter where you put this.",
+                "Frosted glass to opaque. The backdrop stays unreadable throughout.",
                 palette: palette
             )
 
-            Text("“Auto” follows your macOS appearance, including the automatic light/dark schedule.")
-                .font(.system(size: 12))
-                .foregroundStyle(palette.textTertiary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
         }
     }
 
@@ -448,7 +424,7 @@ struct PreferencesView: View {
 
     private var ignored: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Copies from these apps won't be added to history.")
+            Text("Copies from these apps are never recorded.")
                 .font(.system(size: 12))
                 .foregroundStyle(palette.textSecondary)
                 .padding(.bottom, 10)
@@ -484,10 +460,7 @@ struct PreferencesView: View {
             .padding(.top, 12)
 
             Caption(
-                "Apps that mark the pasteboard as concealed — most password managers do — are "
-                    + "skipped automatically whether or not they are listed here. This list is "
-                    + "for everything else: terminals, note apps, anything you would rather not "
-                    + "keep a history of.",
+                "Password managers are already skipped automatically.",
                 palette: palette,
                 dividing: false
             )
@@ -551,7 +524,7 @@ struct PreferencesView: View {
             }
             .buttonStyle(.plain)
 
-            Text("History is also force-cleared daily at \(formattedPurgeHour), including after the Mac wakes from sleep.")
+            Text("Also cleared daily at \(formattedPurgeHour).")
                 .font(.system(size: 12))
                 .foregroundStyle(palette.textTertiary)
                 .padding(.top, 18)
@@ -599,7 +572,7 @@ private struct PrefRow<Leading: View, Trailing: View>: View {
             Spacer(minLength: 12)
             trailing
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 7)
         .overlay(alignment: .bottom) {
             if showsDivider {
                 Rectangle().fill(palette.divider).frame(height: 1)
@@ -726,7 +699,7 @@ private struct Caption: View {
             .foregroundStyle(palette.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.bottom, 10)
+            .padding(.bottom, 7)
             .overlay(alignment: .bottom) {
                 if dividing {
                     Rectangle().fill(palette.divider).frame(height: 1)
