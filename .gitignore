@@ -17,5 +17,8 @@ xcuserdata/
 .vscode/
 .idea/
 
+# Generated from Resources/AppIcon.png by Scripts/make_icon.sh
+Resources/AppIcon.icns
+
 # macOS
 .DS_Store

@@ -157,7 +157,7 @@ struct PreferencesView: View {
     private var pastingSection: some View {
         VStack(spacing: 0) {
             PrefRow(palette: palette, showsDivider: false) {
-                Text("Strip formatting when pasting").prefLabel(palette)
+                Text("Strip Format when pasting").prefLabel(palette)
             } trailing: {
                 SwitchToggle(isOn: $settings.stripFormatting, palette: palette)
             }
@@ -722,7 +722,14 @@ private struct MockupNote: View {
 }
 
 /// Hosts `PreferencesView` in a normal titled window.
-final class PreferencesWindowController: NSWindowController {
+/// Owns the Preferences window, and the app's Dock presence along with it.
+///
+/// KlipKlick runs as an accessory so it has no Dock icon and no ⌘Tab entry. That
+/// is right for a menu-bar app but wrong for a settings window: a window with no
+/// Dock icon cannot be found again once it slips behind something. So the policy
+/// is switched to `.regular` for exactly as long as this window is open, and
+/// back to `.accessory` when it closes.
+final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     convenience init(store: HistoryStore) {
         let hosting = NSHostingController(rootView: PreferencesView(store: store))
         let window = NSWindow(contentViewController: hosting)
@@ -731,15 +738,26 @@ final class PreferencesWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         window.center()
         self.init(window: window)
+        window.delegate = self
     }
 
     func show() {
         // The login item can be revoked in System Settings while the window is
         // closed, so re-read it rather than trusting what the switch last showed.
         Settings.shared.refreshLaunchAtLogin()
-        // An accessory app has no Dock icon, so it must activate explicitly or
-        // the preferences window opens behind whatever the user was using.
+
+        // Dock icon first: activating before the policy change leaves the app
+        // frontmost with no icon, and the window can end up behind again.
+        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        // Back to menu-bar-only. Deferred, because dropping the policy while
+        // the close is still in flight leaves the Dock tile behind.
+        DispatchQueue.main.async {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 }

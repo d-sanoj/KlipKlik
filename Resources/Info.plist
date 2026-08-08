@@ -8,6 +8,10 @@
 	<string>KlipKlick</string>
 	<key>CFBundleExecutable</key>
 	<string>KlipKlick</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.sanoj.KlipKlick</string>
 	<key>CFBundlePackageType</key>

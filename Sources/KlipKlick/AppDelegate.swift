@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Every zone menu item by identifier, for moving the checkmark.
     private var timeZoneItems: [String: NSMenuItem] = [:]
     private var timeZoneMenuItem: NSMenuItem!
+    private var stripFormattingItem: NSMenuItem!
     /// Disabled row at the top of the Timezone submenu naming the current zone.
     private var selectedZoneHeader: NSMenuItem!
 
@@ -183,22 +184,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             keyEquivalent: ""
         ).target = self
 
+        // Same wording as the Preferences row, and the same underlying setting:
+        // this is that switch, not a second one that could disagree with it.
+        stripFormattingItem = menu.addItem(
+            withTitle: "Strip Format when pasting",
+            action: #selector(toggleStripFormatting),
+            keyEquivalent: ""
+        )
+        stripFormattingItem.target = self
+
+        timeZoneMenuItem = menu.addItem(withTitle: "Timezone", action: nil, keyEquivalent: "")
+        timeZoneMenuItem.submenu = buildTimeZoneMenu()
+
         menu.addItem(
             withTitle: "Settings",
             action: #selector(openPreferences),
             keyEquivalent: ","
         ).target = self
 
-        timeZoneMenuItem = menu.addItem(withTitle: "Timezone", action: nil, keyEquivalent: "")
-        timeZoneMenuItem.submenu = buildTimeZoneMenu()
-
+        // The only rule in the menu: everything above is the app, Quit is not.
         menu.addItem(.separator())
 
-        menu.addItem(
+        // Routed through our own selector rather than `terminate:`: macOS
+        // decorates the standard action with a symbol, and setting `image` to
+        // nil does not remove it. Nothing else here has an icon, so it read as
+        // a stray mark.
+        let quit = menu.addItem(
             withTitle: "Quit",
-            action: #selector(NSApplication.terminate(_:)),
+            action: #selector(quitApp),
             keyEquivalent: "q"
         )
+        quit.target = self
+        quit.image = nil
 
         return menu
     }
@@ -400,6 +417,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
     }
 
+    @objc private func quitApp() {
+        NSApp.terminate(nil)
+    }
+
+    @objc private func toggleStripFormatting() {
+        Settings.shared.stripFormatting.toggle()
+    }
+
     @objc private func selectTimeZone(_ sender: NSMenuItem) {
         guard let identifier = sender.representedObject as? String else { return }
         Settings.shared.menuBarTimeZone = identifier
@@ -409,6 +434,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         refreshTimeZoneMenu()
+        // Preferences may have moved it since this menu was last opened.
+        stripFormattingItem?.state = Settings.shared.stripFormatting ? .on : .off
     }
 
     @objc private func openPopup() { popup.show() }

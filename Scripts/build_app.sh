@@ -21,6 +21,21 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/KlipKlick"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+
+# Rebuild the .icns whenever the artwork is newer, so the icon is never stale
+# and the generated file does not need committing.
+if [ -f "$ROOT/Resources/AppIcon.png" ] \
+   && [ ! "$ROOT/Resources/AppIcon.icns" -nt "$ROOT/Resources/AppIcon.png" ]; then
+    "$ROOT/Scripts/make_icon.sh" >/dev/null
+fi
+
+# The icon is optional: the app builds and runs without one, it just shows the
+# generic bundle icon until artwork is dropped at Resources/AppIcon.png.
+if [ -f "$ROOT/Resources/AppIcon.icns" ]; then
+    cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+else
+    echo "    (no Resources/AppIcon.icns — run Scripts/make_icon.sh to build one)"
+fi
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # macOS needs *some* signature to hang the Accessibility permission on. An ad-hoc
