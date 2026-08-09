@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var fallbackHotKey: CarbonHotKey?
     private var statusItem: NSStatusItem!
     private var preferences: PreferencesWindowController!
+    private var onboarding: OnboardingWindowController?
     private var cancellables = Set<AnyCancellable>()
 
     private var clockTimer: Timer?
@@ -79,12 +80,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         finderCutMove.start()
 
-        // Nothing that needs Accessibility works without it — the ⌘⌘ trigger,
-        // auto-paste, and Finder cut-and-move are all inert. Prompt
-        // whenever it is missing rather than only once: the ad-hoc signature
-        // changes on every rebuild, which silently revokes the grant, and a
-        // one-shot prompt leaves the app looking broken with no explanation.
-        if !AccessibilityPermission.isTrusted {
+        // First run is otherwise silent — no Dock icon, no window, just a new
+        // clock in the menu bar that nobody asked about. Say hello once, and let
+        // that window ask for the permissions.
+        //
+        // On later launches, prompt whenever Accessibility is missing rather
+        // than only once: the ad-hoc signature changes on every rebuild, which
+        // silently revokes the grant, and staying quiet leaves the ⌘⌘ trigger,
+        // auto-paste and cut-and-move all inert with no explanation.
+        if !OnboardingWindowController.hasBeenSeen {
+            let controller = OnboardingWindowController()
+            onboarding = controller
+            controller.show()
+        } else if !AccessibilityPermission.isTrusted {
             AccessibilityPermission.requestIfNeeded()
         }
     }

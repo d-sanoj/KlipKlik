@@ -46,7 +46,8 @@ Developer ID. Clear the quarantine flag once:
 xattr -dr com.apple.quarantine /Applications/KlipKlick.app
 ```
 
-Then open it normally. It appears in the menu bar, not the Dock.
+Then open it normally. It appears in the menu bar, not the Dock — a welcome
+window on first launch says so, and offers the two permissions up front.
 
 ### Build from source
 
@@ -60,6 +61,14 @@ cd KlipKlik
 
 The result is `build/KlipKlick.app`. A locally built app is not quarantined, so
 it launches without the `xattr` step.
+
+### Uninstall
+
+**Settings ▸ Storage ▸ Uninstall KlipKlick…** revokes both permissions, removes
+the login item, and deletes every stored setting, then offers to move the app to
+the Trash. Dragging the app to the Trash on its own leaves the privacy grants
+behind, and macOS matches those by bundle identifier — so a later reinstall
+inherits them.
 
 ### Tinkering
 

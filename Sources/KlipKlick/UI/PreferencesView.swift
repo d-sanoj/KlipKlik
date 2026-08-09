@@ -562,6 +562,65 @@ struct PreferencesView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(palette.textTertiary)
                 .padding(.top, 18)
+
+            Divider().padding(.vertical, 18)
+
+            Text("UNINSTALL")
+                .font(.system(size: 10.5, weight: .bold))
+                .tracking(0.63)
+                .foregroundStyle(palette.textTertiary)
+                .padding(.bottom, 6)
+
+            Text("Revokes both permissions, removes the login item, and forgets "
+                + "every setting. Optionally moves the app to the Trash.")
+                .font(.system(size: 12))
+                .foregroundStyle(palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 12)
+
+            Button(action: confirmUninstall) {
+                Text("Uninstall KlipKlick…")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(palette.danger)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(palette.danger.opacity(0.6), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// Two-step on purpose: the second question is the destructive one, and it
+    /// is asked separately so "clean up after yourself" and "delete the app"
+    /// cannot be answered with a single click.
+    private func confirmUninstall() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Uninstall KlipKlick?"
+        alert.informativeText = "Revokes Accessibility and Screen Recording, removes the "
+            + "login item, and deletes every setting. Clipboard history is in memory and "
+            + "goes when the app quits."
+        alert.addButton(withTitle: "Uninstall")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        Uninstaller.tearDown()
+
+        let trash = NSAlert()
+        trash.alertStyle = .warning
+        trash.messageText = "Move KlipKlick to the Trash?"
+        trash.informativeText = "Everything else has been undone. The app itself can stay "
+            + "if you would rather remove it yourself."
+        trash.addButton(withTitle: "Move to Trash")
+        trash.addButton(withTitle: "Keep the App")
+        if trash.runModal() == .alertFirstButtonReturn {
+            Uninstaller.moveToTrash { _ in NSApp.terminate(nil) }
+        } else {
+            NSApp.terminate(nil)
         }
     }
 
