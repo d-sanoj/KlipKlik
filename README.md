@@ -32,7 +32,25 @@ written to disk.
 
 ## Install
 
-Requires macOS 14+ and the Xcode Command Line Tools (Xcode itself is not needed).
+### Download
+
+Grab the `.dmg` from the [latest release](https://github.com/d-sanoj/KlipKlik/releases/latest),
+open it, and drag KlipKlick to Applications.
+
+KlipKlick is ad-hoc signed rather than notarised, so macOS quarantines it on
+download and refuses to launch it — usually claiming the app *"is damaged and
+can't be opened"*. It is not damaged; that is Gatekeeper reacting to the absent
+Developer ID. Clear the quarantine flag once:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/KlipKlick.app
+```
+
+Then open it normally. It appears in the menu bar, not the Dock.
+
+### Build from source
+
+Requires macOS 14+ and the Xcode Command Line Tools — Xcode itself is not needed.
 
 ```bash
 git clone https://github.com/d-sanoj/KlipKlik.git
@@ -40,8 +58,23 @@ cd KlipKlik
 ./Scripts/build_app.sh release
 ```
 
-The result is `build/KlipKlick.app` — drag it to `/Applications`. For a disk
-image instead, run `./Scripts/make_dmg.sh`.
+The result is `build/KlipKlick.app`. A locally built app is not quarantined, so
+it launches without the `xattr` step.
+
+### Tinkering
+
+| | |
+| --- | --- |
+| `./Scripts/build_app.sh` | Debug build, faster to compile |
+| `./Scripts/make_dmg.sh` | Package a disk image |
+| `./Scripts/make_icon.sh` | Rebuild the icon after editing `Resources/AppIcon.png` |
+| `KLIPKLICK_ICON_RADIUS=0.12` | Tighter icon corners (default `0.18`) |
+| `KLIPKLICK_SIGN_IDENTITY="…"` | Sign with a real identity so permissions survive rebuilds |
+| `KLIPKLICK_DEBUG=1` | Log every clipboard capture to stderr |
+
+Ad-hoc signatures change on every rebuild, and macOS ties Accessibility and
+Screen Recording to the signature — so those grants lapse each time you build
+unless you set a signing identity.
 
 ## Shortcuts
 
