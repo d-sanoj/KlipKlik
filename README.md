@@ -129,4 +129,4 @@ Contributions welcome — open an issue or a pull request.
 
 ## License
 
-MIT
+[MIT](LICENSE) © Sanoj Doddapaneni
