@@ -35,6 +35,16 @@ enum TextGrab {
         return !CGRequestScreenCaptureAccess()
     }
 
+    /// Clears this app's Screen Recording approval so it can be granted afresh.
+    ///
+    /// Also forgets that we have asked, so the next grab puts the system prompt
+    /// back up instead of going straight to our own explanation.
+    @discardableResult
+    static func resetPermission() -> Bool {
+        UserDefaults.standard.set(false, forKey: askedKey)
+        return TCC.reset("ScreenCapture")
+    }
+
     static func openSettingsPane() {
         let url = URL(
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"

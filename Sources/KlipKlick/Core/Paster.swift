@@ -65,32 +65,11 @@ enum AccessibilityPermission {
 
     /// Clears this app's Accessibility approval and asks for it again.
     ///
-    /// The grant is tied to the code signature, and an ad-hoc signature changes
-    /// on every rebuild — which leaves a stale row in System Settings that looks
-    /// enabled but no longer matches, and cannot be fixed by toggling it. Only
-    /// clearing the entry and re-approving works.
-    ///
     /// This only ever *revokes*; re-approval still goes through the system
     /// dialog, which is the only thing that can actually grant it.
     @discardableResult
     static func reset() -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
-        process.arguments = [
-            "reset", "Accessibility", Bundle.main.bundleIdentifier ?? "com.sanoj.KlipKlick"
-        ]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return false
-        }
-
-        guard process.terminationStatus == 0 else { return false }
-
+        guard TCC.reset("Accessibility") else { return false }
         // Ask again straight away, so the user gets the approval dialog rather
         // than having to go hunting for it.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {

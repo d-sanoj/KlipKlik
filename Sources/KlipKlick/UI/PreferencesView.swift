@@ -83,6 +83,51 @@ private struct IgnoredAppRow: View {
     }
 }
 
+/// One privacy permission: what it gates, whether it is granted, and the two
+/// things you can do about it.
+private struct PermissionRow: View {
+    let title: String
+    let granted: Bool
+    let grantedNote: String
+    let deniedNote: String
+    let palette: Palette
+    let openSettings: () -> Void
+    let reset: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 10.5, weight: .bold))
+                .tracking(0.63)
+                .foregroundStyle(palette.textTertiary)
+                .padding(.top, 14)
+
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(granted ? Color(hex: 0x34C759) : palette.danger)
+                    .frame(width: 8, height: 8)
+
+                Text(granted ? "Granted" : "Not granted")
+                    .font(.system(size: 13))
+                    .foregroundStyle(palette.textPrimary)
+
+                Spacer()
+
+                Button("Open Settings…", action: openSettings)
+                    .font(.system(size: 12))
+                Button("Reset permission", action: reset)
+                    .font(.system(size: 12))
+            }
+
+            Text(granted ? grantedNote : deniedNote)
+                .font(.system(size: 11))
+                .foregroundStyle(palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// Preferences, following the design's pill tab bar and row layout.
 ///
 /// The design draws a simulated title bar with traffic lights because it is an
@@ -94,6 +139,7 @@ struct PreferencesView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var tab: PrefsTab = .general
     @State private var isTrusted = AccessibilityPermission.isTrusted
+    @State private var canRecordScreen = TextGrab.isPermitted
 
     private var palette: Palette { .resolve(colorScheme) }
 
@@ -280,64 +326,52 @@ struct PreferencesView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 12)
 
-            accessibilitySection
+            permissionsSection
 
             inPopupShortcuts
         }
     }
 
-    private var accessibilitySection: some View {
+    private var permissionsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("ACCESSIBILITY PERMISSION")
-                .font(.system(size: 10.5, weight: .bold))
-                .tracking(0.63)
+            PermissionRow(
+                title: "ACCESSIBILITY",
+                granted: isTrusted,
+                grantedNote: "Double-tap ⌘, auto-paste, and ⌘ X cut-and-move are active.",
+                deniedNote: "Double-tap ⌘, auto-paste, and ⌘ X cut-and-move need this.",
+                palette: palette,
+                openSettings: AccessibilityPermission.openSettingsPane,
+                reset: { AccessibilityPermission.reset() }
+            )
+
+            PermissionRow(
+                title: "SCREEN RECORDING",
+                granted: canRecordScreen,
+                grantedNote: "Screen text grab is active.",
+                deniedNote: "Screen text grab needs this. The colour picker does not.",
+                palette: palette,
+                openSettings: TextGrab.openSettingsPane,
+                reset: { TextGrab.resetPermission() }
+            )
+
+            Text("Both are tied to the code signature, so rebuilding stales them. "
+                + "Reset clears the stale entry; Screen Recording also needs a relaunch.")
+                .font(.system(size: 11))
                 .foregroundStyle(palette.textTertiary)
-                .padding(.top, 20)
-
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(isTrusted ? Color(hex: 0x34C759) : palette.danger)
-                    .frame(width: 8, height: 8)
-
-                Text(isTrusted ? "Granted" : "Not granted")
-                    .font(.system(size: 13))
-                    .foregroundStyle(palette.textPrimary)
-
-                Spacer()
-
-                Button("Open Settings…") { AccessibilityPermission.openSettingsPane() }
-                    .font(.system(size: 12))
-
-                Button("Reset permission") {
-                    AccessibilityPermission.reset()
-                }
-                .font(.system(size: 12))
-            }
-
-            Text(
-                isTrusted
-                    ? "Double-tap ⌘, auto-paste, and ⌘ X cut-and-move are active."
-                    : "Double-tap ⌘, auto-paste, and ⌘ X cut-and-move are all inactive "
-                        + "until this is granted."
-            )
-            .font(.system(size: 11))
-            .foregroundStyle(palette.textTertiary)
-            .fixedSize(horizontal: false, vertical: true)
-
-            Text(
-                "Tied to the code signature, so rebuilding stales it. Reset clears it."
-            )
-            .font(.system(size: 11))
-            .foregroundStyle(palette.textTertiary)
-            .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Polled rather than read once: the value changes outside the app, in
-        // System Settings, so a static read would show a stale status.
+        // Polled rather than read once: these change outside the app, in System
+        // Settings, so a static read would show a stale status.
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             isTrusted = AccessibilityPermission.isTrusted
+            canRecordScreen = TextGrab.isPermitted
         }
-        .onAppear { isTrusted = AccessibilityPermission.isTrusted }
+        .onAppear {
+            isTrusted = AccessibilityPermission.isTrusted
+            canRecordScreen = TextGrab.isPermitted
+        }
     }
 
     private var inPopupShortcuts: some View {

@@ -103,11 +103,16 @@ unless you set a signing identity.
 
 Grant them in **System Settings ▸ Privacy & Security**.
 
+**Settings ▸ Shortcuts** shows both permissions with a live status dot, and gives
+each one its own **Open Settings…** and **Reset permission** button.
+
 > **Note**
 > Without a Developer ID certificate the app is ad-hoc signed, and macOS ties
 > permissions to the code signature — which changes on every rebuild, silently
-> invalidating the grant. Use **Settings ▸ Shortcuts ▸ Reset permission**, or
-> set `KLIPKLICK_SIGN_IDENTITY` to a real signing identity before building.
+> invalidating the grant. The entry in System Settings still looks enabled but
+> no longer matches, and toggling it off and on will not fix it; only a reset
+> will. Set `KLIPKLICK_SIGN_IDENTITY` to a real signing identity to avoid this
+> entirely. Screen Recording additionally needs a relaunch to take effect.
 
 ## Development
 
