@@ -28,6 +28,7 @@ pointer is — type to search, ↩ to paste.
 - **Menu bar clock** — the time in any zone in the world, with its country's flag.
 - **Ignored apps** — per-app opt-out; password managers are skipped automatically.
 - **Pinned items persist** — kept encrypted on disk until you clear them; everything else is wiped on quit.
+- **Light on memory** — items move to encrypted files five minutes after being copied, so a day of screenshots doesn't sit in RAM.
 
 ## Install
 
