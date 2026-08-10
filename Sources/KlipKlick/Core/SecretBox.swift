@@ -6,15 +6,22 @@ import Security
 ///
 /// Clipboard history is exactly the sort of thing that should not sit in plain
 /// files: passwords, tokens, one-time codes, private messages. Offloading it to
-/// SSD to save RAM is only acceptable if what lands there is unreadable to other
-/// users, to backup tools, and to anything else trawling the disk.
+/// SSD to save RAM is only acceptable if what lands there is unreadable to a
+/// backup, a copied folder, or anything grepping the disk.
 ///
-/// AES-GCM with a 256-bit key kept in the login Keychain. The key never touches
-/// the store's directory, so copying the folder elsewhere yields nothing.
+/// AES-GCM with a 256-bit key in a `0600` file, deliberately *not* the Keychain.
+/// The Keychain gates access on the code signature, and an ad-hoc signature
+/// changes with every build — so the stored key stops matching and macOS falls
+/// back to asking for the login password, once per access. An app that prompts
+/// for your password every few minutes is worse than the threat it defends
+/// against, and users learn to type passwords into anything that asks.
+///
+/// What this buys, honestly: the blobs are useless in a Time Machine backup, on
+/// a copied folder, or to anything trawling the disk for readable text, and the
+/// key dies on uninstall. What it does not buy: protection from a process
+/// already running as you, which can read the key file as easily as the app can.
+/// Nothing short of a signed build with a real Keychain entitlement would.
 enum SecretBox {
-    private static let account = "com.sanoj.KlipKlick.storeKey"
-    private static let service = "KlipKlick"
-
     enum Failure: Error { case noKey, corrupt }
 
     static func seal(_ data: Data) throws -> Data {
@@ -28,34 +35,39 @@ enum SecretBox {
         return try AES.GCM.open(box, using: key())
     }
 
-    /// Drops the key, which makes every existing file permanently unreadable.
-    /// Used by uninstall: shredding the key is faster and more thorough than
-    /// overwriting the files, and leaves nothing recoverable if one is missed.
+    /// Shreds the key, which makes every existing file permanently unreadable.
+    /// Faster and more thorough than overwriting blobs, and nothing is
+    /// recoverable if one is missed.
     static func destroyKey() {
-        SecItemDelete([
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account
-        ] as CFDictionary)
+        try? FileManager.default.removeItem(at: keyURL)
+        removeLegacyKeychainKey()
         cached = nil
     }
 
     private static var cached: SymmetricKey?
 
-    /// The store key, created on first use.
+    private static var keyURL: URL {
+        let support = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        )[0]
+        return support
+            .appendingPathComponent("KlipKlick", isDirectory: true)
+            .appendingPathComponent("key")
+    }
+
     private static func key() throws -> SymmetricKey {
         if let cached { return cached }
 
-        var query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
-            kSecReturnData: true
-        ]
+        // Anything left in the Keychain by an earlier version is what causes the
+        // password prompts, so clear it the first time through.
+        removeLegacyKeychainKey()
 
-        var item: CFTypeRef?
-        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-           let data = item as? Data {
+        let url = keyURL
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+
+        if let data = try? Data(contentsOf: url), data.count == 32 {
             let existing = SymmetricKey(data: data)
             cached = existing
             return existing
@@ -63,16 +75,27 @@ enum SecretBox {
 
         let fresh = SymmetricKey(size: .bits256)
         let raw = fresh.withUnsafeBytes { Data($0) }
-        query[kSecReturnData] = nil
-        query[kSecValueData] = raw
-        // Readable only once the Mac has been unlocked at least once, and never
-        // synced to another device.
-        query[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-
-        guard SecItemAdd(query as CFDictionary, nil) == errSecSuccess else {
+        do {
+            // Written owner-read-only from the start — never briefly world
+            // readable between creating the file and tightening it.
+            try raw.write(to: url, options: [.atomic, .completeFileProtection])
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: url.path
+            )
+        } catch {
             throw Failure.noKey
         }
+
         cached = fresh
         return fresh
+    }
+
+    /// Deletes the key an earlier build stored in the login Keychain.
+    private static func removeLegacyKeychainKey() {
+        SecItemDelete([
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: "KlipKlick",
+            kSecAttrAccount: "com.sanoj.KlipKlick.storeKey"
+        ] as CFDictionary)
     }
 }

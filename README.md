@@ -99,10 +99,16 @@ Two tiers, with deliberately different lifetimes:
 | **Pinned** | `Application Support/KlipKlick` | Until you clear them — survives quit and reboot |
 | **Everything else** | `Caches/KlipKlick` | Deleted on quit and at the daily purge |
 
-The encryption key lives in the login Keychain, never beside the files, so
-copying the folder elsewhere yields nothing. Both directories are excluded from
-Time Machine and Spotlight. Uninstalling deletes the key, which makes anything
-missed permanently unreadable.
+The key is a `0600` file, deliberately not the Keychain: the Keychain gates
+access on the code signature, and an ad-hoc signature changes with every build,
+so macOS would fall back to asking for your login password — once per access.
+Both directories are excluded from Time Machine and Spotlight, and uninstalling
+shreds the key, which makes anything missed permanently unreadable.
+
+Honestly scoped: this makes the blobs useless in a backup, in a copied folder,
+or to anything grepping the disk for readable text. It does not protect against
+a process already running as your user, which can read the key as easily as the
+app can. Only a signed build with a real Keychain entitlement would.
 
 **Settings ▸ Storage** shows all three figures — memory, cache, archive — and
 clears each independently.

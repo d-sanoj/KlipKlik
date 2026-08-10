@@ -131,10 +131,17 @@ final class DiskStore {
 
     /// Pinned items as of the last save, with their bytes still on disk.
     func loadPinned() -> [ClipboardItem] {
-        guard let sealed = try? Data(contentsOf: indexURL),
-              let plain = try? SecretBox.open(sealed),
+        guard let sealed = try? Data(contentsOf: indexURL) else { return [] }
+
+        guard let plain = try? SecretBox.open(sealed),
               let stubs = try? JSONDecoder().decode([Stub].self, from: plain)
-        else { return [] }
+        else {
+            // Written under a key we no longer hold, so the blobs beside it are
+            // just as unreadable. Clear them rather than leaving files that can
+            // never be opened and never get cleaned up.
+            clearPinned()
+            return []
+        }
 
         return stubs.map {
             ClipboardItem(
