@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 /// The item families KlipKlick tells apart. Rows are text-only, so this only
 /// surfaces in the hover detail card and in how an item is restored.
-enum ClipKind {
+enum ClipKind: String, Codable {
     case text
     case rich
     case link
@@ -35,7 +35,7 @@ enum ClipKind {
 /// `representations` keeps every flavour the source app put on the pasteboard
 /// (RTF, HTML, plain string, file URLs, TIFF...), so putting the item back is
 /// lossless rather than a text-only approximation.
-struct ClipboardItem: Identifiable, Equatable {
+struct ClipboardItem: Identifiable, Equatable, Codable {
     let id: UUID
     let kind: ClipKind
     let title: String
@@ -44,7 +44,11 @@ struct ClipboardItem: Identifiable, Equatable {
     /// Set only for `.color` items — the hex string as it was copied.
     let colorHex: String?
     /// One dictionary per `NSPasteboardItem`, mapping type identifier to raw data.
-    let representations: [[String: Data]]
+    ///
+    /// Nil once the item has been offloaded to disk — this is the heavy part, an
+    /// image can be several megabytes, and holding every one in RAM is what the
+    /// offload exists to avoid. `DiskStore.materialize(_:)` brings it back.
+    var representations: [[String: Data]]?
     /// Localised name of the app that was frontmost when this was copied.
     let sourceApp: String?
     let createdAt: Date
@@ -59,7 +63,7 @@ struct ClipboardItem: Identifiable, Equatable {
         title: String,
         plainText: String?,
         colorHex: String? = nil,
-        representations: [[String: Data]],
+        representations: [[String: Data]]?,
         sourceApp: String? = nil,
         createdAt: Date = Date(),
         fingerprint: String,
@@ -362,6 +366,13 @@ extension ClipboardItem {
                 return pasteboard.changeCount
             }
             // Nothing to strip down to — fall through and restore in full.
+        }
+
+        // Offloaded and not yet brought back: the plain text is all that is left
+        // in memory, and pasting that beats pasting nothing.
+        guard let representations else {
+            if let plainText { pasteboard.setString(plainText, forType: .string) }
+            return pasteboard.changeCount
         }
 
         let items: [NSPasteboardItem] = representations.map { bag in

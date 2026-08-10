@@ -102,8 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         doubleTap.stop()
         finderCutMove.stop()
         clockTimer?.invalidate()
-        // Memory-only history: nothing to flush, it goes with the process.
-        store.clearAll()
+        // Pinned items are an archive and stay; everything else, including its
+        // encrypted swap on disk, goes with the session.
+        store.endSession()
     }
 
     // MARK: Status bar

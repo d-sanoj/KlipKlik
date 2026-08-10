@@ -140,6 +140,7 @@ struct PreferencesView: View {
     @State private var tab: PrefsTab = .general
     @State private var isTrusted = AccessibilityPermission.isTrusted
     @State private var canRecordScreen = TextGrab.isPermitted
+    @State private var storageTick = 0
 
     private var palette: Palette { .resolve(colorScheme) }
 
@@ -531,39 +532,55 @@ struct PreferencesView: View {
 
     private var storage: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("\(store.items.count) item\(store.items.count == 1 ? "" : "s") stored")
+            Text("\(store.items.count) item\(store.items.count == 1 ? "" : "s") — "
+                + "\(store.pinned.count) pinned")
                 .font(.system(size: 13))
                 .foregroundStyle(palette.textPrimary)
                 .padding(.bottom, 4)
 
-            // The design says "on disk"; this build keeps history in memory only,
-            // so the honest figure is the in-memory footprint.
-            Text("Approx. \(formattedFootprint) in memory — nothing is written to disk.")
+            Text("\(formattedFootprint) in memory · \(formattedCache) cached · "
+                + "\(formattedArchive) pinned on disk")
                 .font(.system(size: 12))
                 .foregroundStyle(palette.textTertiary)
-                .padding(.bottom, 18)
+                .padding(.bottom, 4)
 
-            Button {
-                store.clearAll()
-            } label: {
-                Text("Clear All History")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(palette.danger)
-                    )
+            Caption(
+                "Items move to encrypted files five minutes after being copied, to keep memory "
+                    + "small. Cached files go when you quit; pinned ones stay until you clear them.",
+                palette: palette
+            )
+            .padding(.bottom, 14)
+
+            HStack(spacing: 10) {
+                dangerButton("Clear History") { store.clearAll() }
+                plainButton("Clear Cached Files") {
+                    DiskStore.shared.clearCache()
+                    storageTick += 1
+                }
             }
-            .buttonStyle(.plain)
 
-            Text("Also cleared daily at \(formattedPurgeHour).")
+            Text("Also cleared daily at \(formattedPurgeHour). Neither touches pinned items.")
                 .font(.system(size: 12))
                 .foregroundStyle(palette.textTertiary)
-                .padding(.top, 18)
+                .padding(.top, 12)
 
-            Divider().padding(.vertical, 18)
+            Divider().padding(.vertical, 16)
+
+            Text("PINNED ITEMS")
+                .font(.system(size: 10.5, weight: .bold))
+                .tracking(0.63)
+                .foregroundStyle(palette.textTertiary)
+                .padding(.bottom, 6)
+
+            Text("Unpin one at a time from the popup's Pinned shelf, or drop all "
+                + "\(store.pinned.count) here.")
+                .font(.system(size: 12))
+                .foregroundStyle(palette.textTertiary)
+                .padding(.bottom, 10)
+
+            dangerButton("Clear Pinned Items") { confirmClearPinned() }
+
+            Divider().padding(.vertical, 16)
 
             Text("UNINSTALL")
                 .font(.system(size: 10.5, weight: .bold))
@@ -571,26 +588,81 @@ struct PreferencesView: View {
                 .foregroundStyle(palette.textTertiary)
                 .padding(.bottom, 6)
 
-            Text("Revokes both permissions, removes the login item, and forgets "
-                + "every setting. Optionally moves the app to the Trash.")
+            Text("Revokes both permissions, removes the login item, deletes every setting "
+                + "and every stored item. Optionally moves the app to the Trash.")
                 .font(.system(size: 12))
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 12)
 
-            Button(action: confirmUninstall) {
-                Text("Uninstall KlipKlick…")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(palette.danger)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(palette.danger.opacity(0.6), lineWidth: 1)
-                    )
-            }
-            .buttonStyle(.plain)
+            outlineButton("Uninstall KlipKlick…", action: confirmUninstall)
         }
+        // Bumped after a clear, so the byte counts refresh.
+        .id(storageTick)
+    }
+
+    private func dangerButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12.5))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(palette.danger)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func plainButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12.5))
+                .foregroundStyle(palette.textPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(palette.searchBackground)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func outlineButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12.5))
+                .foregroundStyle(palette.danger)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(palette.danger.opacity(0.6), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Pinned items are the one thing in the app that survives a reboot, so
+    /// dropping the lot asks first.
+    private func confirmClearPinned() {
+        let count = store.pinned.count
+        guard count > 0 else { return }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Clear \(count) pinned item\(count == 1 ? "" : "s")?"
+        alert.informativeText = "Pinned items are the only history kept between launches. "
+            + "This cannot be undone."
+        alert.addButton(withTitle: "Clear Pinned")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        store.clearPinned()
+        storageTick += 1
     }
 
     /// Two-step on purpose: the second question is the destructive one, and it
@@ -609,6 +681,7 @@ struct PreferencesView: View {
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
         Uninstaller.tearDown()
+        DiskStore.shared.destroyEverything()
 
         let trash = NSAlert()
         trash.alertStyle = .warning
@@ -624,9 +697,19 @@ struct PreferencesView: View {
         }
     }
 
+    private var formattedCache: String { Self.bytes(DiskStore.shared.bytes(pinned: false)) }
+    private var formattedArchive: String { Self.bytes(DiskStore.shared.bytes(pinned: true)) }
+
+    private static func bytes(_ count: Int) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(count))
+    }
+
     private var formattedFootprint: String {
         let bytes = store.items.reduce(0) { total, item in
-            total + item.representations.reduce(0) { subtotal, bag in
+            total + (item.representations ?? []).reduce(0) { subtotal, bag in
                 subtotal + bag.values.reduce(0) { $0 + $1.count }
             }
         }

@@ -64,7 +64,7 @@ final class DailyPurge {
         lastHandledBoundary = boundary
         // A force-clear, so it takes pinned items too — unlike the footer's
         // "Clear History", which deliberately keeps them.
-        store.clearAll()
+        store.clearAll()  // keeps pinned; see HistoryStore.clearAll()
     }
 
     /// The latest occurrence of `hour:00` local time at or before `date`.

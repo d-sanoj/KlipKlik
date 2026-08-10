@@ -332,7 +332,10 @@ final class PopupController: NSObject, NSWindowDelegate {
         // there is a one-off escape hatch in whichever direction you need.
         // Non-text items have no plain flavour and are always restored in full.
         let stripFormatting = Settings.shared.stripFormatting != invertFormatting
-        let changeCount = item.write(to: .general, plainTextOnly: stripFormatting)
+        // Bytes may have been offloaded to disk since the copy; fetch them back
+        // before writing, or the paste degrades to plain text.
+        let ready = viewModel.store.materialized(item)
+        let changeCount = ready.write(to: .general, plainTextOnly: stripFormatting)
         onDidWriteToPasteboard?(changeCount)
 
         guard Settings.shared.pasteAutomatically, AccessibilityPermission.isTrusted else { return }

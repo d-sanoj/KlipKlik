@@ -15,8 +15,7 @@
 ---
 
 No Dock icon, no ⌘Tab entry. Double-tap ⌘ and a popup opens wherever your
-pointer is — type to search, ↩ to paste. History lives in memory and is never
-written to disk.
+pointer is — type to search, ↩ to paste.
 
 ## Features
 
@@ -28,7 +27,7 @@ written to disk.
 - **⌘ X in Finder** — Windows-style cut and move for files.
 - **Menu bar clock** — the time in any zone in the world, with its country's flag.
 - **Ignored apps** — per-app opt-out; password managers are skipped automatically.
-- **Private by default** — memory only, cleared daily and on quit.
+- **Pinned items persist** — kept encrypted on disk until you clear them; everything else is wiped on quit.
 
 ## Install
 
@@ -84,6 +83,28 @@ inherits them.
 Ad-hoc signatures change on every rebuild, and macOS ties Accessibility and
 Screen Recording to the signature — so those grants lapse each time you build
 unless you set a signing identity.
+
+## Storage and privacy
+
+Clipboard content is held in memory for five minutes after being copied, then
+written to an **AES-GCM encrypted** file and dropped from RAM — an image can be
+several megabytes, and holding every one resident is what this avoids. Metadata
+stays in memory, so the list still renders and searches without touching disk.
+
+Two tiers, with deliberately different lifetimes:
+
+| | Where | Lifetime |
+| --- | --- | --- |
+| **Pinned** | `Application Support/KlipKlick` | Until you clear them — survives quit and reboot |
+| **Everything else** | `Caches/KlipKlick` | Deleted on quit and at the daily purge |
+
+The encryption key lives in the login Keychain, never beside the files, so
+copying the folder elsewhere yields nothing. Both directories are excluded from
+Time Machine and Spotlight. Uninstalling deletes the key, which makes anything
+missed permanently unreadable.
+
+**Settings ▸ Storage** shows all three figures — memory, cache, archive — and
+clears each independently.
 
 ## Shortcuts
 
