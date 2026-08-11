@@ -35,6 +35,21 @@ enum TextGrab {
         return !CGRequestScreenCaptureAccess()
     }
 
+    /// The shortest route to actually granting Screen Recording.
+    ///
+    /// Unlike Accessibility, this one has a real Allow button: the first request
+    /// raises a system dialog that grants on the spot. macOS only ever shows it
+    /// once per app, so after that the Settings pane is the only route left.
+    ///
+    /// - Returns: true when the system dialog was raised, so the caller can stay
+    ///   quiet and let it do the asking.
+    @discardableResult
+    static func allow() -> Bool {
+        if promptIfNeverAsked() { return true }
+        openSettingsPane()
+        return false
+    }
+
     /// Clears this app's Screen Recording approval so it can be granted afresh.
     ///
     /// Also forgets that we have asked, so the next grab puts the system prompt

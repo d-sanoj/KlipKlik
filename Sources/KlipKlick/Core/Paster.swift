@@ -56,6 +56,21 @@ enum AccessibilityPermission {
         return AXIsProcessTrustedWithOptions(options as CFDictionary)
     }
 
+    /// The shortest route to actually granting Accessibility.
+    ///
+    /// There is no API that grants it — macOS reserves that for the user, and
+    /// `AXIsProcessTrustedWithOptions` only raises an alert whose sole action is
+    /// "Open System Settings". Showing that alert costs a click and offers no
+    /// choice, so this registers the app in the list silently and opens the pane
+    /// itself.
+    static func allow() {
+        // Asking without the prompt still puts the app in the Accessibility
+        // list, so there is a row waiting to be switched on when the pane opens.
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
+        _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
+        openSettingsPane()
+    }
+
     static func openSettingsPane() {
         let url = URL(
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"

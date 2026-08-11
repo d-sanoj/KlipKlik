@@ -113,8 +113,10 @@ private struct PermissionRow: View {
 
                 Spacer()
 
-                Button("Open Settings…", action: openSettings)
-                    .font(.system(size: 12))
+                if !granted {
+                    Button("Allow", action: openSettings)
+                        .font(.system(size: 12))
+                }
                 Button("Reset permission", action: reset)
                     .font(.system(size: 12))
             }
@@ -341,7 +343,7 @@ struct PreferencesView: View {
                 grantedNote: "Double-tap ⌘, auto-paste, and ⌘ X cut-and-move are active.",
                 deniedNote: "Double-tap ⌘, auto-paste, and ⌘ X cut-and-move need this.",
                 palette: palette,
-                openSettings: AccessibilityPermission.openSettingsPane,
+                openSettings: AccessibilityPermission.allow,
                 reset: { AccessibilityPermission.reset() }
             )
 
@@ -351,12 +353,15 @@ struct PreferencesView: View {
                 grantedNote: "Screen text grab is active.",
                 deniedNote: "Screen text grab needs this. The colour picker does not.",
                 palette: palette,
-                openSettings: TextGrab.openSettingsPane,
+                openSettings: { TextGrab.allow() },
                 reset: { TextGrab.resetPermission() }
             )
 
-            Text("Both are tied to the code signature, so rebuilding stales them. "
-                + "Reset clears the stale entry; Screen Recording also needs a relaunch.")
+            Text("Screen Recording asks right here the first time. Accessibility can "
+                + "only be switched on by you — macOS gives apps no way to grant it, "
+                + "so Allow opens the pane with KlipKlick already listed. Both are "
+                + "tied to the code signature, so updating stales them; Reset clears "
+                + "the stale entry.")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -84,17 +84,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // clock in the menu bar that nobody asked about. Say hello once, and let
         // that window ask for the permissions.
         //
-        // On later launches, prompt whenever Accessibility is missing rather
-        // than only once: the ad-hoc signature changes on every rebuild, which
-        // silently revokes the grant, and staying quiet leaves the ⌘⌘ trigger,
-        // auto-paste and cut-and-move all inert with no explanation.
+        // On later launches, surface the same window whenever Accessibility is
+        // missing rather than staying quiet: the signature changes on every
+        // update, which silently revokes the grant and leaves the ⌘⌘ trigger,
+        // auto-paste and cut-and-move inert with no explanation.
+        //
+        // Deliberately not the bare `AXIsProcessTrustedWithOptions` alert — it
+        // arrives with no icon and no account of what it unlocks, which reads
+        // as something the app did wrong.
         if !OnboardingWindowController.hasBeenSeen {
-            let controller = OnboardingWindowController()
-            onboarding = controller
-            controller.show()
+            showOnboarding(mode: .welcome)
         } else if !AccessibilityPermission.isTrusted {
-            AccessibilityPermission.requestIfNeeded()
+            showOnboarding(mode: .permissions)
         }
+    }
+
+    private func showOnboarding(mode: OnboardingView.Mode) {
+        let controller = OnboardingWindowController(mode: mode)
+        onboarding = controller
+        controller.show()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
