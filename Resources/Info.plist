@@ -2,8 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleName</key>
-	<string>KlipKlick</string>
 	<key>CFBundleDisplayName</key>
 	<string>KlipKlick</string>
 	<key>CFBundleExecutable</key>
@@ -14,15 +12,16 @@
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.sanoj.KlipKlick</string>
+	<key>CFBundleName</key>
+	<string>KlipKlick</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.3</string>
+	<string>1.0.4</string>
 	<key>CFBundleVersion</key>
-	<string>4</string>
+	<string>5</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
-	<!-- Status-bar only: no Dock icon, no ⌘Tab entry. -->
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>

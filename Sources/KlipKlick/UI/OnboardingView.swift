@@ -21,12 +21,37 @@ struct OnboardingView: View {
 
     var mode: Mode = .welcome
     let onFinish: () -> Void
+    let onRestart: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var isTrusted = AccessibilityPermission.isTrusted
     @State private var canRecordScreen = TextGrab.isPermitted
 
+    /// What was granted when this window opened, so a grant made *while it is
+    /// open* can be told apart from one that was already there.
+    @State private var trustedAtOpen = AccessibilityPermission.isTrusted
+    @State private var couldRecordAtOpen = TextGrab.isPermitted
+
     private var palette: Palette { .resolve(colorScheme) }
+
+    /// Set once the user has asked for a grant from this window.
+    @State private var didAttemptGrant = false
+
+    /// Whether to offer a restart rather than a plain dismiss.
+    ///
+    /// This deliberately keys off the user having *asked*, not off a confirmed
+    /// change: `CGPreflightScreenCaptureAccess` caches its answer for the life
+    /// of the process, so a Screen Recording grant made a second ago still
+    /// reads as denied in here. Waiting for the observed flip means the button
+    /// never changes for the one permission that most needs the restart.
+    ///
+    /// The observed cases are still checked, to catch a grant made directly in
+    /// System Settings without touching Allow.
+    private var needsRestart: Bool {
+        didAttemptGrant
+            || (isTrusted && !trustedAtOpen)
+            || (canRecordScreen && !couldRecordAtOpen)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -42,14 +67,20 @@ struct OnboardingView: View {
                 title: "Accessibility",
                 detail: "Double-tap ⌘, auto-paste, ⌘ X cut-and-move",
                 granted: isTrusted,
-                action: AccessibilityPermission.allow
+                action: {
+                    didAttemptGrant = true
+                    AccessibilityPermission.allow()
+                }
             )
 
             grant(
                 title: "Screen Recording",
                 detail: "Grab text off the screen",
                 granted: canRecordScreen,
-                action: { TextGrab.allow() }
+                action: {
+                    didAttemptGrant = true
+                    TextGrab.allow()
+                }
             )
 
             Text("Screen Recording asks right here. Accessibility can only be "
@@ -62,8 +93,8 @@ struct OnboardingView: View {
 
             HStack {
                 Spacer()
-                Button(action: onFinish) {
-                    Text(mode == .welcome ? "Start Using KlipKlick" : "Done")
+                Button(action: needsRestart ? onRestart : onFinish) {
+                    Text(primaryButtonTitle)
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
@@ -95,6 +126,11 @@ struct OnboardingView: View {
             isTrusted = AccessibilityPermission.isTrusted
             canRecordScreen = TextGrab.isPermitted
         }
+    }
+
+    private var primaryButtonTitle: String {
+        if needsRestart { return "Restart and use KlipKlik" }
+        return mode == .welcome ? "Start Using KlipKlik" : "Done"
     }
 
     private var introText: String {
@@ -187,7 +223,11 @@ final class OnboardingWindowController: NSWindowController {
         self.init(window: window)
 
         let hosting = NSHostingController(
-            rootView: OnboardingView(mode: mode) { [weak self] in self?.finish() }
+            rootView: OnboardingView(
+                mode: mode,
+                onFinish: { [weak self] in self?.finish() },
+                onRestart: { [weak self] in self?.restart() }
+            )
         )
         // Let SwiftUI's measured height drive the window, so neither mode clips.
         hosting.sizingOptions = [.preferredContentSize]
@@ -209,5 +249,13 @@ final class OnboardingWindowController: NSWindowController {
         UserDefaults.standard.set(true, forKey: Self.seenKey)
         window?.close()
         DispatchQueue.main.async { NSApp.setActivationPolicy(.accessory) }
+    }
+
+    private func restart() {
+        // Record the visit first: the relaunched copy must not open this window
+        // a second time and ask again for what was just granted.
+        UserDefaults.standard.set(true, forKey: Self.seenKey)
+        UserDefaults.standard.synchronize()
+        Relauncher.relaunch()
     }
 }
