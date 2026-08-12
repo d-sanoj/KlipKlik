@@ -39,13 +39,21 @@ enum TextGrab {
     ///
     /// Unlike Accessibility, this one has a real Allow button: the first request
     /// raises a system dialog that grants on the spot. macOS only ever shows it
-    /// once per app, so after that the Settings pane is the only route left.
+    /// once per app, so after that the Settings pane is the route left.
     ///
-    /// - Returns: true when the system dialog was raised, so the caller can stay
-    ///   quiet and let it do the asking.
+    /// The request is made *every* time, not just the first. `CGRequest…` is what
+    /// registers the app in the Screen Recording list, and that entry is tied to
+    /// the code signature — so updating the app removes the row, and without a
+    /// fresh request there is nothing in Settings to switch on. Guarding this
+    /// behind "have we asked before" opened the pane onto a list with no
+    /// KlipKlick in it, which is unfixable from the user's side.
+    ///
+    /// - Returns: true if Screen Recording is already granted.
     @discardableResult
     static func allow() -> Bool {
-        if promptIfNeverAsked() { return true }
+        let granted = CGRequestScreenCaptureAccess()
+        UserDefaults.standard.set(true, forKey: askedKey)
+        guard !granted else { return true }
         openSettingsPane()
         return false
     }
@@ -153,7 +161,7 @@ enum TextGrab {
         }
 
         guard let observations = request.results, !observations.isEmpty else { return nil }
-        return layOut(observations)
+        return layOut(observations, in: image)
     }
 
     /// Rebuilds the page layout from where the words sat.
@@ -164,7 +172,10 @@ enum TextGrab {
     /// gaps against a typical character width puts them back, which is the
     /// difference between grabbing code you can paste and code you have to
     /// re-indent by hand.
-    private static func layOut(_ observations: [VNRecognizedTextObservation]) -> String {
+    private static func layOut(
+        _ observations: [VNRecognizedTextObservation],
+        in image: CGImage
+    ) -> String {
         struct Fragment {
             let text: String
             let box: CGRect
@@ -172,7 +183,9 @@ enum TextGrab {
 
         let fragments: [Fragment] = observations.compactMap {
             guard let best = $0.topCandidates(1).first else { return nil }
-            return Fragment(text: best.string, box: $0.boundingBox)
+            // Vision has no ⌘ ⌥ ⇧ ¥ in its vocabulary and substitutes Latin
+            // look-alikes; compare the pixels again before laying out.
+            return Fragment(text: GlyphRepair.repair(best, in: image), box: $0.boundingBox)
         }
         guard !fragments.isEmpty else { return "" }
 
