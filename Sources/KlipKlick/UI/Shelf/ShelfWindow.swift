@@ -3,16 +3,15 @@ import SwiftUI
 
 /// The window one shelf lives in.
 ///
-/// Non-activating for the same reason the clipboard popup is: dropping a file
-/// onto a shelf must not pull focus away from the Finder window you are working
-/// in. It only becomes key while a name is being edited, because a text field in
-/// a window that cannot take focus is a text field you cannot type into.
+/// Non-activating so a drop from Finder does not pull focus away from the
+/// window you are working in. It *can* become key after a click, which is
+/// what lets ⌘A select every file on the shelf without activating the app.
 final class ShelfPanel: NSPanel {
     let shelfID: UUID
     /// Raised only for renaming. See `ShelfView.beginRename`.
     var wantsKey = false
 
-    override var canBecomeKey: Bool { wantsKey }
+    override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
     init(shelfID: UUID) {
@@ -26,6 +25,55 @@ final class ShelfPanel: NSPanel {
     }
 }
 
+/// How a shelf window first appears. Driven from the window controller so the
+/// SwiftUI body can spring without knowing about AppKit's order-front.
+final class ShelfAppearance: ObservableObject {
+    enum Entrance {
+        /// Already on screen (restored, or the feature toggled back on).
+        case none
+        /// Grew out of the notch after a drop on the pad.
+        case fromNotch
+        /// A milder pop, for the hot key and "Add to Shelf".
+        case appear
+    }
+
+    var entrance: Entrance = .none
+    @Published var revealed = true
+
+    var hiddenScaleX: CGFloat {
+        switch entrance {
+        case .none: return 1
+        case .fromNotch: return 0.9
+        case .appear: return 0.94
+        }
+    }
+
+    var hiddenScaleY: CGFloat {
+        switch entrance {
+        case .none: return 1
+        case .fromNotch: return 0.36
+        case .appear: return 0.94
+        }
+    }
+
+    var hiddenOffset: CGFloat {
+        switch entrance {
+        case .none: return 0
+        case .fromNotch: return 0
+        case .appear: return 8
+        }
+    }
+
+    var revealAnimation: Animation {
+        switch entrance {
+        case .fromNotch:
+            return .spring(response: 0.34, dampingFraction: 1.0)
+        default:
+            return .spring(response: 0.42, dampingFraction: 0.9)
+        }
+    }
+}
+
 /// Owns one `ShelfPanel`: placing it, keeping its position in the store, and
 /// tearing it down when the shelf goes.
 final class ShelfWindowController: NSObject, NSWindowDelegate {
@@ -34,6 +82,13 @@ final class ShelfWindowController: NSObject, NSWindowDelegate {
     private let panel: ShelfPanel
     private let store: ShelfStore
     private weak var manager: ShelfManager?
+    private let appearance = ShelfAppearance()
+    /// SwiftUI resizes from the bottom-left; this is the top-left we re-pin to,
+    /// the same trick the clipboard popup uses.
+    private var anchorTopLeft: NSPoint = .zero
+    private var isAdjustingFrame = false
+    private var isAnimatingBirth = false
+    private var keyMonitor: Any?
 
     init(shelfID: UUID, store: ShelfStore, manager: ShelfManager) {
         self.shelfID = shelfID
@@ -47,7 +102,7 @@ final class ShelfWindowController: NSObject, NSWindowDelegate {
     private func configure() {
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false
         // Above ordinary windows but below the clipboard popup, so opening the
         // popup over a shelf does not put the shelf on top of it.
         panel.level = .floating
@@ -56,7 +111,11 @@ final class ShelfWindowController: NSObject, NSWindowDelegate {
         panel.isMovableByWindowBackground = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.animationBehavior = .utilityWindow
+        // `.none`, not `.utilityWindow`. The utility animation interpolates from
+        // the panel's birth rect — which is `(0, 0)` at the bottom-left of the
+        // screen — so a new shelf used to crawl up from there instead of
+        // appearing where we placed it.
+        panel.animationBehavior = .none
         // `.stationary` and not `.transient`: a shelf is a place you are putting
         // things for later, so it has to survive Mission Control and an app
         // switch rather than being swept away with the other floating panels.
@@ -65,6 +124,7 @@ final class ShelfWindowController: NSObject, NSWindowDelegate {
 
         let view = ShelfView(
             store: store,
+            appearance: appearance,
             shelfID: shelfID,
             onClose: { [weak self] in self?.close() },
             onNeedsKeyWindow: { [weak self] wants in self?.setWantsKey(wants) },
@@ -75,13 +135,89 @@ final class ShelfWindowController: NSObject, NSWindowDelegate {
         let hosting = NSHostingController(rootView: view)
         hosting.sizingOptions = [.preferredContentSize]
         panel.contentViewController = hosting
+        installKeyMonitor()
     }
 
-    func show() {
+    deinit {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+    }
+
+    func show(entrance: ShelfAppearance.Entrance = .none) {
+        appearance.entrance = entrance
+        appearance.revealed = entrance == .none
+        panel.hasShadow = false
+
+        isAdjustingFrame = true
+        panel.layoutIfNeeded()
+        if entrance == .fromNotch {
+            playNotchBirth()
+            return
+        }
+
+        place()
         panel.layoutIfNeeded()
         place()
         panel.orderFrontRegardless()
+        isAdjustingFrame = false
+        store.setWindowTopLeft(shelfID, anchorTopLeft)
+
+        if entrance == .appear {
+            DispatchQueue.main.async { [weak self] in
+                self?.appearance.revealed = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+                self?.panel.hasShadow = true
+            }
+        } else {
+            appearance.revealed = true
+            panel.hasShadow = true
+        }
+
         store.pruneMissing(in: shelfID)
+    }
+
+    /// Grows the shelf out of the expanded island: same rest position, scaled
+    /// from the top so it reads as the notch bubbling downward into a panel.
+    /// The pad stays in front for a beat and recedes into the housing, which is
+    /// what makes the two feel like one motion.
+    private func playNotchBirth() {
+        let seed = store.shelf(shelfID)?.windowTopLeft ?? NSEvent.mouseLocation
+        let screen = NotchGeometry.screen(containing: seed)
+        let dock = NotchGeometry.dock(on: screen)
+        let rest = restFrame(on: screen, dock: dock)
+
+        isAnimatingBirth = true
+        panel.level = .statusBar
+        panel.setFrame(rest, display: true)
+        anchorTopLeft = CGPoint(x: rest.minX, y: rest.maxY)
+        panel.orderFrontRegardless()
+        store.pruneMissing(in: shelfID)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.appearance.revealed = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard let self else { return }
+                self.panel.level = .floating
+                self.panel.hasShadow = true
+                self.anchorTopLeft = CGPoint(x: rest.minX, y: rest.maxY)
+                self.store.setWindowTopLeft(self.shelfID, self.anchorTopLeft)
+                self.isAdjustingFrame = false
+                self.isAnimatingBirth = false
+            }
+        }
+    }
+
+    /// Centred on the housing, a clear gap below the menu bar so the shelf is
+    /// a panel in the room rather than a thing pressed against the ceiling.
+    private func restFrame(on screen: NSScreen, dock: NSRect) -> NSRect {
+        let rank = store.shelves.firstIndex { $0.id == shelfID } ?? 0
+        let offset = CGFloat(rank % 6) * Self.cascadeStep
+        let size = panel.frame.size
+        let visible = screen.visibleFrame
+        let x = NotchGeometry.snap(dock.midX - size.width / 2 + offset, on: screen)
+        let top = visible.maxY - 22 - offset
+        return NSRect(x: x, y: top - size.height, width: size.width, height: size.height)
     }
 
     /// How far each new shelf is stepped down and right from the last.
@@ -111,24 +247,47 @@ final class ShelfWindowController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// ⌘A / Escape while this shelf is the key window. The first responder is
+    /// often a SwiftUI host that never sees `selectAll`, so the window listens.
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.window === self.panel || self.panel.isKeyWindow else {
+                return event
+            }
+            if self.panel.firstResponder is NSTextView { return event }
+            if event.isShelfSelectAll {
+                NotificationCenter.default.post(name: .shelfSelectAll, object: self.shelfID)
+                return nil
+            }
+            if event.keyCode == 53 {
+                NotificationCenter.default.post(name: .shelfDeselectAll, object: self.shelfID)
+                return nil
+            }
+            return event
+        }
+    }
+
     /// Where the shelf was left, or near the pointer for a new one.
     ///
     /// New shelves cascade rather than stack: opening a second one directly on
     /// top of the first makes it look like nothing happened.
     private func place() {
-        let saved = store.shelf(shelfID)?.windowTopLeft
-        let target = saved ?? {
+        let rank = store.shelves.firstIndex { $0.id == shelfID } ?? 0
+        let offset = CGFloat(rank % 6) * Self.cascadeStep
+
+        let target: CGPoint
+        if let saved = store.shelf(shelfID)?.windowTopLeft {
+            target = saved
+        } else {
             let mouse = NSEvent.mouseLocation
-            // Index among open shelves, so the step is stable rather than
-            // depending on how many have been closed since.
-            let rank = store.shelves.firstIndex { $0.id == shelfID } ?? 0
-            let offset = CGFloat(rank % 6) * Self.cascadeStep
-            return CGPoint(
+            target = CGPoint(
                 x: mouse.x - ShelfView.width / 2 + offset,
                 y: mouse.y - 20 - offset
             )
-        }()
+        }
 
+        anchorTopLeft = target
         panel.setFrameTopLeftPoint(target)
         keepOnScreen()
     }
@@ -164,20 +323,29 @@ final class ShelfWindowController: NSObject, NSWindowDelegate {
 
         guard abs(topLeft.x - frame.minX) > 0.5 || abs(topLeft.y - frame.maxY) > 0.5 else { return }
         panel.setFrameTopLeftPoint(topLeft)
+        anchorTopLeft = topLeft
     }
 
     // MARK: NSWindowDelegate
 
     func windowDidMove(_ notification: Notification) {
-        store.setWindowTopLeft(
-            shelfID, CGPoint(x: panel.frame.minX, y: panel.frame.maxY)
-        )
+        guard !isAdjustingFrame, !isAnimatingBirth else { return }
+        let point = CGPoint(x: panel.frame.minX, y: panel.frame.maxY)
+        anchorTopLeft = point
+        store.setWindowTopLeft(shelfID, point)
     }
 
     /// SwiftUI resizes the panel as items are added and removed, and a shelf that
     /// grew a row is exactly the one likely to have grown off the screen.
     func windowDidResize(_ notification: Notification) {
+        guard !isAdjustingFrame, !isAnimatingBirth, panel.isVisible else { return }
+        isAdjustingFrame = true
+        let current = CGPoint(x: panel.frame.minX, y: panel.frame.maxY)
+        if abs(current.y - anchorTopLeft.y) > 0.5 || abs(current.x - anchorTopLeft.x) > 0.5 {
+            panel.setFrameTopLeftPoint(anchorTopLeft)
+        }
         keepOnScreen()
+        isAdjustingFrame = false
     }
 
     func windowDidResignKey(_ notification: Notification) {

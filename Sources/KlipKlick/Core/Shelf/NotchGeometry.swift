@@ -26,19 +26,25 @@ enum NotchGeometry {
             // some other coordinate space; fall back to a centred housing.
             let derived = screen.frame.width - left.width - right.width
             guard derived > 0 else { return nil }
-            return NSRect(
-                x: screen.frame.midX - derived / 2,
-                y: screen.frame.maxY - inset,
-                width: derived,
-                height: inset
+            return snap(
+                NSRect(
+                    x: screen.frame.midX - derived / 2,
+                    y: screen.frame.maxY - inset,
+                    width: derived,
+                    height: inset
+                ),
+                on: screen
             )
         }
 
-        return NSRect(
-            x: left.maxX,
-            y: screen.frame.maxY - inset,
-            width: width,
-            height: inset
+        return snap(
+            NSRect(
+                x: left.maxX,
+                y: screen.frame.maxY - inset,
+                width: width,
+                height: inset
+            ),
+            on: screen
         )
     }
 
@@ -57,12 +63,33 @@ enum NotchGeometry {
 
         let height = menuBarHeight(on: screen)
         let width: CGFloat = 180
-        return NSRect(
-            x: screen.frame.midX - width / 2,
-            y: screen.frame.maxY - height,
-            width: width,
-            height: height
+        return snap(
+            NSRect(
+                x: screen.frame.midX - width / 2,
+                y: screen.frame.maxY - height,
+                width: width,
+                height: height
+            ),
+            on: screen
         )
+    }
+
+    /// Round a rect onto the screen's backing pixels so a 1px seam cannot open
+    /// between the island and the real housing.
+    static func snap(_ rect: NSRect, on screen: NSScreen) -> NSRect {
+        let scale = max(screen.backingScaleFactor, 1)
+        func up(_ value: CGFloat) -> CGFloat { (value * scale).rounded(.up) / scale }
+        func nearest(_ value: CGFloat) -> CGFloat { (value * scale).rounded() / scale }
+        let minX = up(rect.minX)
+        let maxX = nearest(rect.maxX)
+        let maxY = nearest(rect.maxY)
+        let minY = nearest(rect.minY)
+        return NSRect(x: minX, y: minY, width: max(maxX - minX, 0), height: max(maxY - minY, 0))
+    }
+
+    static func snap(_ value: CGFloat, on screen: NSScreen) -> CGFloat {
+        let scale = max(screen.backingScaleFactor, 1)
+        return (value * scale).rounded() / scale
     }
 
     /// The screen a point falls on, with the usual fallbacks.

@@ -21,7 +21,7 @@ pointer is — type to search, ↩ to paste.
 
 - **Clipboard history** — text, rich text, links, colours, images, and files, with search and pinning.
 - **Keyboard-first** — double-tap ⌘ to open, arrows to move, ↩ to paste, ⌘ 1…9 to grab the *n*th item.
-- **Drag shelves** — pick up any file and a drop target appears; park files there, then drag them back out wherever you're going.
+- **Drag shelves** — pick up any file and the notch opens into a Copy / Move tray; park files there, select them like Finder, then drag them back out.
 - **Strip formatting** — paste as plain text, with a one-off override while choosing.
 - **Colour picker** — sample any pixel on screen, get `#RRGGBB` on the clipboard.
 - **Screen text grab** — drag a box over anything readable and copy the *text*, indentation and blank lines intact.
@@ -88,37 +88,51 @@ unless you set a signing identity.
 
 ## Drag shelves
 
-Start dragging any file and the notch grows a small lip. Drag up to it and it
-opens into a tray; let go and it becomes a shelf — a floating window that stays
-above everything and follows you across spaces. Fill it from anywhere — Finder,
-a web page, Mail — then drag the contents back out where you actually want them.
+Start dragging any file and the camera notch itself expands into a black tray,
+split **Copy** on the left and **Move** on the right. Let go and it becomes a
+shelf — a floating window that stays above everything and follows you across
+spaces. Fill it from anywhere — Finder, a web page, Mail — then drag the
+contents back out where you actually want them.
 
 The target is the notch every time, not wherever the pointer happened to be. A
-fixed target can be learned, and it sits against the top edge of the screen, so
+fixed target can be learned, and it sits against the top of the screen, so
 you can throw the pointer at it rather than aim. On a Mac with no notch — an
 external display, a Mac mini — the same tray appears in the same place, centred
 under the menu bar.
 
-Dropping *in* never touches the original. Files from Finder are held by path, so
-shelving a 4 GB video costs a string and no disk. Only content with no file
-behind it — an image dragged out of a browser, a text selection, a promised file
-from Photos or Mail — is written to disk, because there is nothing else to point
-at. A dragged link becomes a `.webloc`, as it would on the Desktop.
+**Copy** (left) parks a reference. The original stays on disk, always. Shelving
+a 4 GB video costs a string and no extra bytes.
 
-Dragging *out* copies or moves exactly as the destination decides, the same as
-any other macOS drag. The shelf never deletes anything itself: after a move it
-checks whether the file is actually gone and only then drops the row.
+**Move** (right) also parks a reference — Finder is not asked to delete
+anything on the way in. The cut completes only when you drag that file *out* of
+the Move shelf. Closing the shelf, emptying it, or clicking × leaves the
+original where it was.
+
+Only content with no file behind it — an image dragged out of a browser, a text
+selection, a promised file from Photos or Mail — is written to disk, because
+there is nothing else to point at. A dragged link becomes a `.webloc`, as it
+would on the Desktop.
+
+The shelf sizes itself to the files: one row for 1–4, two for 5–8, three for
+9 or more, then it scrolls. Hovering shows the action buttons without resizing
+the window. Removing the last file closes the shelf.
 
 | | |
 | --- | --- |
-| Drop on the notch | New shelf, opening below it |
-| `⌥ ⌘ S` | New empty shelf |
-| Drag a tile out | Copy, or move — the destination and modifier keys decide |
-| Click a tile | Quick Look |
+| Drop on Copy (left half) | New Copy shelf, opening out of the notch |
+| Drop on Move (right half) | New Move shelf; originals stay until dragged out |
+| `⌥ ⌘ S` | New empty Copy shelf |
+| Click a file | Select it |
+| ⌘-click / Shift-click | Toggle / range, as in Finder |
+| Drag across files or empty space | Paint-select / rubber-band |
+| Click empty space, or `esc` | Deselect |
+| `⌘ A` | Select all files on that shelf |
+| Drag selected files out | They leave together |
+| Click × on a file | Remove it from the shelf (does not trash the original) |
 | Double-click | Open |
 | Right-click | Open With, Reveal, Copy, Copy Path, Remove |
 | Double-click the title | Rename |
-| Hover the shelf | Action bar — move to the front Finder window, copy, Quick Look, reveal, zip, share |
+| Hover the shelf | Actions fade in — move to the front Finder window, copy, Quick Look, reveal, zip, share |
 
 **Move to the front Finder window** is the ⌘X trick from cut-and-move: the files
 go on the pasteboard and Finder is sent ⌥⌘V, so Finder's own conflict handling,
@@ -183,10 +197,11 @@ bytes staged for shelves — and clears each independently.
 | `⌥ P` | Pin / unpin |
 | `⌥ S` | Put the selected item's files on a shelf |
 | `⌥ ⌘ S` | New shelf |
+| `⌘ A` | Select all files on the focused shelf |
 | `⌘ ⌫` | Delete item |
 | `⌥ ⌘ ⌫` | Clear history (keeps pinned) |
 | `⌘ ,` | Settings |
-| `esc` | Close |
+| `esc` | Close popup, or deselect on a shelf |
 
 ## Permissions
 

@@ -40,11 +40,11 @@ final class ShelfStore: ObservableObject {
     }
 
     @discardableResult
-    func addShelf(at topLeft: CGPoint? = nil) -> Shelf {
+    func addShelf(at topLeft: CGPoint? = nil, intake: Shelf.Intake = .copy) -> Shelf {
         // Tints cycle rather than repeat, so two shelves opened back to back are
         // never the same colour — which is the entire reason for having tints.
         let tint = (shelves.last?.tintIndex).map { ($0 + 1) % Shelf.tints.count } ?? 0
-        let shelf = Shelf(tintIndex: tint, windowTopLeft: topLeft)
+        let shelf = Shelf(tintIndex: tint, windowTopLeft: topLeft, intake: intake)
         shelves.append(shelf)
         onShelfAdded?(shelf)
         scheduleSave()
@@ -137,6 +137,14 @@ final class ShelfStore: ObservableObject {
         return true
     }
 
+    /// Parks files on a Move shelf as references. The originals stay where they
+    /// are until a later drag-out completes the cut — closing the shelf must not
+    /// take them off disk.
+    @discardableResult
+    func addMoving(urls: [URL], to id: UUID) -> Int {
+        add(urls: urls, to: id)
+    }
+
     private func append(_ item: ShelfItem, to id: UUID) {
         guard let index = shelves.firstIndex(where: { $0.id == id }) else { return }
         shelves[index].items.append(item)
@@ -150,6 +158,47 @@ final class ShelfStore: ObservableObject {
         ShelfStorage.discard(shelves[index].items[itemIndex])
         shelves[index].items.remove(at: itemIndex)
         scheduleSave()
+        closeIfEmpty(shelfID)
+    }
+
+    /// A successful drag *out* of a shelf. The row always goes; the last item
+    /// takes the shelf with it.
+    ///
+    /// Copy shelves leave the original on disk. Move shelves complete the cut:
+    /// if Finder did not already relocate the file, it is put in the Trash so
+    /// only the destination copy remains. Closing a Move shelf never does this.
+    func takeOut(item itemID: UUID, from shelfID: UUID) {
+        takeOut(items: [itemID], from: shelfID)
+    }
+
+    /// A successful drag *out* of a shelf. The rows always go; the last item
+    /// takes the shelf with it.
+    ///
+    /// Copy shelves leave the original on disk. Move shelves complete the cut:
+    /// if Finder did not already relocate the file, it is put in the Trash so
+    /// only the destination copy remains. Closing a Move shelf never does this.
+    func takeOut(items ids: [UUID], from shelfID: UUID) {
+        guard let index = shelves.firstIndex(where: { $0.id == shelfID }) else { return }
+        let wanted = Set(ids)
+        let leaving = shelves[index].items.filter { wanted.contains($0.id) }
+        guard !leaving.isEmpty else { return }
+        let intake = shelves[index].intake
+        shelves[index].items.removeAll { wanted.contains($0.id) }
+        scheduleSave()
+        closeIfEmpty(shelfID)
+        for item in leaving {
+            if item.origin == .staged {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    ShelfStorage.discard(item)
+                }
+            } else if intake == .move {
+                let leftover = item.url
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    guard FileManager.default.fileExists(atPath: leftover.path) else { return }
+                    try? FileManager.default.trashItem(at: leftover, resultingItemURL: nil)
+                }
+            }
+        }
     }
 
     func removeAllItems(from shelfID: UUID) {
@@ -157,6 +206,14 @@ final class ShelfStore: ObservableObject {
             for item in shelf.items { ShelfStorage.discard(item) }
             shelf.items.removeAll()
         }
+        closeIfEmpty(shelfID)
+    }
+
+    /// An empty shelf is just a box. The last file leaving — ×, Empty, or a
+    /// drag-out — takes the window with it.
+    private func closeIfEmpty(_ shelfID: UUID) {
+        guard let shelf = shelf(shelfID), shelf.items.isEmpty else { return }
+        removeShelf(shelfID)
     }
 
     /// Drops references whose file has since been moved or deleted. Called when a

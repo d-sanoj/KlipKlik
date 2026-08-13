@@ -8,6 +8,22 @@ import AppKit
 /// last dragged to, so reopening a persisted shelf puts it back where the user
 /// left it rather than under the pointer.
 struct Shelf: Identifiable, Equatable, Codable {
+    /// How files first landed on this shelf from the notch.
+    enum Intake: String, Codable {
+        case copy, move
+
+        var title: String { self == .move ? "Move" : "Copy" }
+        var symbol: String { self == .move ? "arrow.right" : "plus" }
+        var help: String {
+            switch self {
+            case .copy:
+                return "Copied onto this shelf. Originals stay where they were."
+            case .move:
+                return "Will be moved from the original location when dragged out of this shelf."
+            }
+        }
+    }
+
     let id: UUID
     var name: String
     /// Index into `Shelf.tints`. Stored as an index, not a colour, so the
@@ -20,6 +36,8 @@ struct Shelf: Identifiable, Equatable, Codable {
     var windowTopLeft: CGPoint?
     /// Collapsed shelves draw as a compact pill showing only the count.
     var isCollapsed: Bool
+    /// Copy vs Move, from the notch half that created the shelf.
+    var intake: Intake
 
     init(
         id: UUID = UUID(),
@@ -28,7 +46,8 @@ struct Shelf: Identifiable, Equatable, Codable {
         items: [ShelfItem] = [],
         createdAt: Date = Date(),
         windowTopLeft: CGPoint? = nil,
-        isCollapsed: Bool = false
+        isCollapsed: Bool = false,
+        intake: Intake = .copy
     ) {
         self.id = id
         self.name = name ?? Self.defaultName(at: createdAt)
@@ -37,6 +56,7 @@ struct Shelf: Identifiable, Equatable, Codable {
         self.createdAt = createdAt
         self.windowTopLeft = windowTopLeft
         self.isCollapsed = isCollapsed
+        self.intake = intake
     }
 
     var isEmpty: Bool { items.isEmpty }
@@ -82,5 +102,39 @@ struct Shelf: Identifiable, Equatable, Codable {
 
     var tint: NSColor {
         Self.tints[min(max(tintIndex, 0), Self.tints.count - 1)].color
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, tintIndex, items, createdAt, windowTopLeft, isCollapsed, intake
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        tintIndex = try container.decode(Int.self, forKey: .tintIndex)
+        items = try container.decode([ShelfItem].self, forKey: .items)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        windowTopLeft = try container.decodeIfPresent(CGPoint.self, forKey: .windowTopLeft)
+        isCollapsed = try container.decodeIfPresent(Bool.self, forKey: .isCollapsed) ?? false
+        if let stored = try container.decodeIfPresent(Intake.self, forKey: .intake) {
+            intake = stored
+        } else if !items.isEmpty, items.allSatisfy({ $0.origin == .staged }) {
+            intake = .move
+        } else {
+            intake = .copy
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(tintIndex, forKey: .tintIndex)
+        try container.encode(items, forKey: .items)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(windowTopLeft, forKey: .windowTopLeft)
+        try container.encode(isCollapsed, forKey: .isCollapsed)
+        try container.encode(intake, forKey: .intake)
     }
 }

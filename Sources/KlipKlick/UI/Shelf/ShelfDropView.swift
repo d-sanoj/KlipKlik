@@ -20,20 +20,28 @@ import UniformTypeIdentifiers
 /// 3. **Raw data** — an image or a text selection with no file anywhere. Written
 ///    into staging under an invented name.
 final class ShelfDropView: NSView {
-    /// Files that already exist and should be referenced.
+    /// Files that already exist and should be referenced (copy) or staged (move).
     var onDropFiles: (([URL]) -> Void)?
+    /// Same payload as `onDropFiles`, used when the drop landed on the Move half.
+    var onDropMovingFiles: (([URL]) -> Void)?
     /// A file received from a promise or written from raw data. Called once per
     /// item, on the main queue, and the URL is a scratch file the receiver is
     /// expected to take ownership of.
     var onDropStagedFile: ((URL) -> Void)?
     /// Highlight state, so the shelf can show it is a live target.
     var onTargetingChanged: ((Bool) -> Void)?
+    /// When set, the pad splits into Copy (left) and Move (right).
+    var splitMidX: (() -> CGFloat)?
+    /// `true` for Move, `false` for Copy, `nil` when the drag leaves.
+    var onHoverMove: ((Bool?) -> Void)?
 
     private let promiseQueue: OperationQueue = {
         let queue = OperationQueue()
         queue.name = "com.sanoj.KlipKlick.filepromise"
         return queue
     }()
+
+    override var isOpaque: Bool { false }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -53,33 +61,52 @@ final class ShelfDropView: NSView {
         return types
     }
 
+    private var hoverMove = false
+
     // MARK: Destination
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard !(sender.draggingSource is FileDragSourceView) else { return [] }
         onTargetingChanged?(true)
         return operation(for: sender)
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        operation(for: sender)
+        guard !(sender.draggingSource is FileDragSourceView) else { return [] }
+        return operation(for: sender)
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
+        hoverMove = false
+        onHoverMove?(nil)
         onTargetingChanged?(false)
     }
 
     override func draggingEnded(_ sender: NSDraggingInfo) {
+        hoverMove = false
+        onHoverMove?(nil)
         onTargetingChanged?(false)
     }
 
-    /// Always `.copy`, never `.move`, whatever the source offers.
-    ///
-    /// Putting something on a shelf must not disturb where it came from — the
-    /// shelf is a holding area, and a drag that silently emptied the source
-    /// folder would be the worst possible surprise. The move, when the user wants
-    /// one, happens on the way *out*.
+    /// Copy vs Move only chooses what the shelf *will* do later. The drop itself
+    /// is always a copy, so the original stays in place until the file is
+    /// dragged out of a Move shelf.
     private func operation(for sender: NSDraggingInfo) -> NSDragOperation {
-        sender.draggingSourceOperationMask.contains(.copy) ? .copy : .generic
+        let move = isOnMoveSide(sender)
+        if hoverMove != move {
+            hoverMove = move
+            onHoverMove?(move)
+        }
+        return sender.draggingSourceOperationMask.contains(.copy) ? .copy : .generic
+    }
+
+    /// The pad window *is* the island, so the split is the view's own midline.
+    /// Converting through the island's flipped coordinates was landing every
+    /// drop on the same half, which is why Copy and Move used to do the same thing.
+    private func isOnMoveSide(_ sender: NSDraggingInfo) -> Bool {
+        guard splitMidX != nil else { return false }
+        let x = convert(sender.draggingLocation, from: nil).x
+        return x >= bounds.midX
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -93,7 +120,14 @@ final class ShelfDropView: NSView {
         ) as? [URL] ?? []
 
         if !urls.isEmpty {
-            onDropFiles?(urls.map(\.standardizedFileURL))
+            let files = urls.map(\.standardizedFileURL)
+            // Recompute from this event — don't trust `hoverMove`, which can be
+            // stale if `draggingEnded` ran first on some system versions.
+            if isOnMoveSide(sender) {
+                onDropMovingFiles?(files)
+            } else {
+                onDropFiles?(files)
+            }
             return true
         }
 

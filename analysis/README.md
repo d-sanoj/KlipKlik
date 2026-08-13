@@ -29,6 +29,7 @@ If you only read two files, read [05-permissions.md](05-permissions.md) and
 | [10-decisions.md](10-decisions.md) | Decision log — what was chosen and what it cost |
 | [11-what-i-got-wrong.md](11-what-i-got-wrong.md) | The mistakes, including two that shipped |
 | [12-drag-shelf.md](12-drag-shelf.md) | Drag shelves, and detecting a drag with no permissions |
+| [13-shelf-island-copy-move.md](13-shelf-island-copy-move.md) | Notch island, Copy vs Move, selection, and the hit-testing mess |
 
 ## The short version
 
@@ -52,6 +53,12 @@ output, and no other offline OCR engine knows these glyphs either.
 per-symbol breakdown said `⇧` and `⌥` were weak, which sent me tuning shapes.
 Splitting the same data by *font* showed system text was already at 100% and
 every single loss was monospaced. Different problem entirely.
+
+**A drop destination that returns `.move` is how Finder deletes the original.**
+The shelf's Move half always returns `.copy` on intake and only completes the
+cut when the file is dragged *out*. Getting that backwards, even briefly, is
+the kind of bug that does not look like a bug until a file is gone. The rest of
+the shelf session is in [13-shelf-island-copy-move.md](13-shelf-island-copy-move.md).
 
 ## Reproducing the measurements
 

@@ -8,6 +8,7 @@ import SwiftUI
 /// removed somewhere else.
 struct ShelfView: View {
     @ObservedObject var store: ShelfStore
+    @ObservedObject var appearance: ShelfAppearance
     let shelfID: UUID
     let onClose: () -> Void
     /// Asks the window to take focus, which renaming needs and nothing else does.
@@ -21,25 +22,49 @@ struct ShelfView: View {
     @State private var draftName = ""
     @State private var isHoveringShelf = false
     @State private var status: String?
+    @State private var selectedIDs: Set<UUID> = []
+    @State private var selectionAnchor: UUID?
 
     private var palette: Palette { .resolve(colorScheme) }
     private var shelf: Shelf? { store.shelf(shelfID) }
     private var urls: [URL] { shelf?.items.map(\.url) ?? [] }
+
+    /// Action-bar and bulk gestures use the selection when there is one.
+    private var activeItems: [ShelfItem] {
+        guard let items = shelf?.items else { return [] }
+        if selectedIDs.isEmpty { return items }
+        return items.filter { selectedIDs.contains($0.id) }
+    }
+
+    private var activeURLs: [URL] { activeItems.map(\.url) }
 
     /// Four tiles to a row. Wide enough to be worth opening, narrow enough that
     /// three shelves fit side by side without covering the window underneath.
     static let columns = 4
     static let width: CGFloat = 288
     private static let gridSpacing: CGFloat = 8
+    /// After this many rows the grid scrolls instead of growing the window.
+    private static let maxVisibleRows = 3
+    /// Icon plus the caption under it.
+    private static let tileRowHeight: CGFloat = ShelfTile.size + 16
+    private static let gridPadding: CGFloat = 20
+
+    /// One row for 1–4 files, two for 5–8, three for 9+, then it scrolls.
+    static func gridHeight(for itemCount: Int) -> CGFloat {
+        let rows = max(1, Int(ceil(Double(itemCount) / Double(columns))))
+        let visible = min(rows, maxVisibleRows)
+        return CGFloat(visible) * tileRowHeight
+            + CGFloat(max(0, visible - 1)) * gridSpacing
+            + gridPadding
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider().overlay(palette.divider)
             content
-            if isHoveringShelf, shelf?.isEmpty == false {
-                Divider().overlay(palette.divider)
-                actionBar
+            if shelf?.isEmpty == false {
+                hoverActions
             }
         }
         .frame(width: Self.width)
@@ -48,8 +73,28 @@ struct ShelfView: View {
         .clipShape(RoundedRectangle(cornerRadius: Metrics.cornerRadius, style: .continuous))
         .background(dropCatcher)
         .onHover { isHoveringShelf = $0 }
-        .animation(.easeInOut(duration: 0.14), value: isHoveringShelf)
+        .scaleEffect(
+            x: appearance.revealed ? 1 : appearance.hiddenScaleX,
+            y: appearance.revealed ? 1 : appearance.hiddenScaleY,
+            anchor: .top
+        )
+        .offset(y: appearance.revealed ? 0 : appearance.hiddenOffset)
+        .opacity(appearance.revealed ? 1 : 0)
+        .animation(appearance.revealAnimation, value: appearance.revealed)
         .animation(.easeInOut(duration: 0.14), value: isTargeted)
+        .onKeyPress(.escape) {
+            selectedIDs = []
+            return .handled
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .shelfSelectAll)) { note in
+            guard note.object as? UUID == shelfID else { return }
+            selectedIDs = Set(shelf?.items.map(\.id) ?? [])
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .shelfDeselectAll)) { note in
+            guard note.object as? UUID == shelfID else { return }
+            selectedIDs = []
+        }
+        .focusable()
     }
 
     // MARK: Chrome
@@ -68,19 +113,34 @@ struct ShelfView: View {
     private var header: some View {
         HStack(spacing: 7) {
             title
-                // The handle covers the title area only, so the two buttons to
-                // its right stay clickable without any hit-testing tricks.
+                // The handle covers the title area only, so the close button to
+                // its right stays clickable without any hit-testing tricks.
                 .overlay(dragHandle)
 
-            headerButton("trash", "Empty this shelf") {
-                store.removeAllItems(from: shelfID)
-            }
-            .opacity(shelf?.isEmpty == false ? 1 : 0)
-
+            intakeBadge
             headerButton("xmark", "Close shelf", action: onClose)
         }
         .padding(.horizontal, 10)
         .frame(height: 40)
+    }
+
+    private var intakeBadge: some View {
+        let intake = shelf?.intake ?? .copy
+        let tint = Color(nsColor: shelf?.tint ?? .controlAccentColor)
+        return HStack(spacing: 3) {
+            Image(systemName: intake.symbol)
+                .font(.system(size: 8, weight: .bold))
+            Text(intake.title)
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(
+            Capsule(style: .continuous)
+                .fill(tint.opacity(0.16))
+        )
+        .help(intake.help)
     }
 
     private var title: some View {
@@ -104,7 +164,11 @@ struct ShelfView: View {
 
                 Text(status ?? shelf?.summary ?? "Empty")
                     .font(.system(size: 10))
-                    .foregroundStyle(status == nil ? palette.textSecondary : palette.accent)
+                    .foregroundStyle(
+                        status != nil
+                            ? palette.accent
+                            : palette.textSecondary
+                    )
                     .lineLimit(1)
             }
 
@@ -139,6 +203,7 @@ struct ShelfView: View {
     @ViewBuilder
     private var content: some View {
         if let shelf, !shelf.items.isEmpty {
+            let height = Self.gridHeight(for: shelf.items.count)
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVGrid(
                     columns: Array(
@@ -152,36 +217,110 @@ struct ShelfView: View {
                     }
                 }
                 .padding(10)
+                .frame(maxWidth: .infinity, minHeight: height, alignment: .top)
+                .overlay {
+                    // On top of the grid so empty space is clickable, with
+                    // hit-testing punched through the tiles themselves.
+                    ShelfCanvas(
+                        currentSelection: { selectedIDs },
+                        onApplySelection: { selectedIDs = $0 },
+                        onPress: { onNeedsKeyWindow(true) },
+                        onSelectAll: { selectedIDs = Set(shelf.items.map(\.id)) }
+                    )
+                }
             }
-            // Three rows before it scrolls. Past that a shelf stops being a
-            // glance and becomes a file browser, which is not what it is for.
-            .frame(maxHeight: 3 * (ShelfTile.size + 14) + 2 * Self.gridSpacing + 20)
+            .frame(height: height)
+            .onChange(of: shelf.items.map(\.id)) { _, ids in
+                selectedIDs = selectedIDs.intersection(ids)
+            }
         } else {
             emptyState
         }
     }
 
     private func tile(_ item: ShelfItem) -> some View {
-        ShelfTile(
+        let tint = Color(nsColor: shelf?.tint ?? .controlAccentColor)
+        return ShelfTile(
             item: item,
             palette: palette,
-            onDragBegan: onDragBegan,
+            isSelected: selectedIDs.contains(item.id),
+            tint: tint,
+            onMouseDown: { flags in
+                onNeedsKeyWindow(true)
+                select(item, modifiers: flags, collapsing: false)
+            },
+            onClick: { select(item, modifiers: $0, collapsing: true) },
+            onDragBegan: {
+                onDragBegan()
+            },
             onDragEnded: { operation in
                 onDragEnded(operation)
-                // The destination may have moved the file rather than copied it.
-                // Rather than guess which, look: `pruneMissing` drops rows whose
-                // file is genuinely gone and leaves the rest alone.
-                if operation.contains(.move) {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                        store.pruneMissing(in: shelfID)
-                    }
-                }
+                guard !operation.isEmpty else { return }
+                let ids = dragIDs(startingAt: item)
+                store.takeOut(items: ids, from: shelfID)
+                selectedIDs.subtract(ids)
             },
-            onOpen: { ShelfActions.open([item.url]) },
-            onQuickLook: { ShelfActions.quickLook([item.url]) },
+            onOpen: {
+                let targets = selectedIDs.contains(item.id)
+                    ? activeURLs
+                    : [item.url]
+                ShelfActions.open(targets)
+            },
             onRemove: { store.remove(item: item.id, from: shelfID) },
-            menuBuilder: { itemMenu(for: item) }
+            menuBuilder: { itemMenu(for: item) },
+            urls: { dragURLs(startingAt: item) },
+            operationMask: {
+                shelf?.intake == .move
+                    ? [.move, .copy, .generic]
+                    : [.copy, .generic]
+            },
+            onSelectItem: { selectedIDs.insert($0) },
+            onClearSelection: { selectedIDs = [] },
+            onSelectAll: { selectedIDs = Set(shelf?.items.map(\.id) ?? []) }
         )
+    }
+
+    private func select(_ item: ShelfItem, modifiers: NSEvent.ModifierFlags, collapsing: Bool) {
+        let items = shelf?.items ?? []
+        let command = modifiers.contains(.command)
+        let shift = modifiers.contains(.shift)
+
+        // ⌘ and ⇧ are applied on mouse-down only. Applying them again on mouse-up
+        // toggled the same tile twice, so a ⌘-click appeared to do nothing.
+        if collapsing {
+            if command || shift { return }
+            selectedIDs = [item.id]
+            selectionAnchor = item.id
+            return
+        }
+
+        if command {
+            if selectedIDs.contains(item.id) {
+                selectedIDs.remove(item.id)
+            } else {
+                selectedIDs.insert(item.id)
+            }
+            selectionAnchor = item.id
+        } else if shift,
+                  let anchor = selectionAnchor,
+                  let from = items.firstIndex(where: { $0.id == anchor }),
+                  let to = items.firstIndex(where: { $0.id == item.id }) {
+            let slice = items[min(from, to)...max(from, to)]
+            selectedIDs = Set(slice.map(\.id))
+        } else if !selectedIDs.contains(item.id) {
+            selectedIDs = [item.id]
+            selectionAnchor = item.id
+        }
+    }
+
+    private func dragIDs(startingAt item: ShelfItem) -> [UUID] {
+        if selectedIDs.contains(item.id) { return Array(selectedIDs) }
+        return [item.id]
+    }
+
+    private func dragURLs(startingAt item: ShelfItem) -> [URL] {
+        let wanted = Set(dragIDs(startingAt: item))
+        return (shelf?.items ?? []).filter { wanted.contains($0.id) }.map(\.url)
     }
 
     private var emptyState: some View {
@@ -199,25 +338,35 @@ struct ShelfView: View {
 
     // MARK: Actions
 
-    private var actionBar: some View {
-        HStack(spacing: 2) {
-            action("arrow.down.doc", "Move to the front Finder window") {
-                moveToFinder()
-            }
-            action("doc.on.doc", "Copy files to the clipboard") {
-                ShelfActions.copyToClipboard(urls)
-                flash("Copied \(urls.count)")
-            }
-            action("eye", "Quick Look") { ShelfActions.quickLook(urls) }
-            action("folder", "Reveal in Finder") { ShelfActions.revealInFinder(urls) }
-            action("archivebox", "Compress to a zip") { compress() }
+    /// Always occupies a row so hover only fades the buttons in — inserting
+    /// this on the way in, and removing it on the way out, is what made the
+    /// whole panel bounce.
+    private var hoverActions: some View {
+        VStack(spacing: 0) {
+            Divider().overlay(palette.divider)
+                .opacity(isHoveringShelf ? 1 : 0)
+            HStack(spacing: 2) {
+                action("arrow.down.doc", "Move to the front Finder window") {
+                    moveToFinder()
+                }
+                action("doc.on.doc", "Copy files to the clipboard") {
+                    ShelfActions.copyToClipboard(activeURLs)
+                    flash("Copied \(activeURLs.count)")
+                }
+                action("eye", "Quick Look") { ShelfActions.quickLook(activeURLs) }
+                action("folder", "Reveal in Finder") { ShelfActions.revealInFinder(activeURLs) }
+                action("archivebox", "Compress to a zip") { compress() }
 
-            Spacer(minLength: 0)
+                Spacer(minLength: 0)
 
-            action("square.and.arrow.up", "Share") { share() }
+                action("square.and.arrow.up", "Share") { share() }
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 32)
+            .opacity(isHoveringShelf ? 1 : 0)
+            .allowsHitTesting(isHoveringShelf)
+            .animation(.easeOut(duration: 0.12), value: isHoveringShelf)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 32)
     }
 
     private func action(
@@ -326,8 +475,8 @@ struct ShelfView: View {
             )
             return
         }
-        let count = urls.count
-        ShelfActions.moveToFrontFinderWindow(urls) { sent in
+        let count = activeURLs.count
+        ShelfActions.moveToFrontFinderWindow(activeURLs) { sent in
             guard sent else { return }
             flash("Moving \(count)…")
             // Finder does the move; the shelf finds out the same way it does for
@@ -341,7 +490,7 @@ struct ShelfView: View {
     private func compress() {
         let name = shelf?.name ?? "Shelf"
         flash("Compressing…")
-        ShelfActions.compress(urls, named: name) { archive in
+        ShelfActions.compress(activeURLs, named: name) { archive in
             guard let archive else {
                 flash("Couldn't compress")
                 return
@@ -357,7 +506,7 @@ struct ShelfView: View {
         guard let view = NSApp.windows
             .first(where: { ($0 as? ShelfPanel)?.shelfID == shelfID })?.contentView
         else { return }
-        ShelfActions.share(urls, from: view)
+        ShelfActions.share(activeURLs, from: view)
     }
 
     /// Replaces the summary line for a moment. A shelf has no room for alerts,

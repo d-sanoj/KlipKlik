@@ -9,13 +9,20 @@ import SwiftUI
 struct ShelfTile: View {
     let item: ShelfItem
     let palette: Palette
+    var isSelected = false
+    var tint: Color = .accentColor
+    let onMouseDown: (NSEvent.ModifierFlags) -> Void
+    let onClick: (NSEvent.ModifierFlags) -> Void
     let onDragBegan: () -> Void
     let onDragEnded: (NSDragOperation) -> Void
     let onOpen: () -> Void
-    let onQuickLook: () -> Void
     let onRemove: () -> Void
     let menuBuilder: () -> NSMenu?
-
+    var urls: () -> [URL] = { [] }
+    var operationMask: () -> NSDragOperation = { [.copy, .generic] }
+    var onSelectItem: (UUID) -> Void = { _ in }
+    var onClearSelection: () -> Void = {}
+    var onSelectAll: () -> Void = {}
     @ObservedObject private var thumbnails = ShelfThumbnails.shared
     @State private var isHovering = false
 
@@ -31,16 +38,14 @@ struct ShelfTile: View {
                 .truncationMode(.middle)
                 .frame(width: Self.size)
         }
-        .overlay(alignment: .topTrailing) { removeButton }
         .overlay(dragLayer)
-        .onHover { isHovering = $0 }
         .help("\(item.name) — \(item.sizeLabel)")
     }
 
     private var preview: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isHovering ? palette.rowHover : .clear)
+                .fill(isSelected ? tint.opacity(0.22) : (isHovering ? palette.rowHover : .clear))
 
             Image(nsImage: thumbnails.image(for: item))
                 .resizable()
@@ -59,44 +64,29 @@ struct ShelfTile: View {
             }
         }
         .frame(width: Self.size, height: Self.size)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(isSelected ? tint.opacity(0.9) : .clear, lineWidth: 1.5)
+        )
     }
 
-    /// Only on hover, and only 14pt — a permanent close badge on every tile turns
-    /// a shelf of eight files into sixteen things competing for attention.
-    @ViewBuilder
-    private var removeButton: some View {
-        if isHovering {
-            Button(action: onRemove) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 14))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(palette.surface, palette.textSecondary)
-            }
-            .buttonStyle(.plain)
-            .offset(x: 4, y: -4)
-            .help(item.origin == .staged ? "Remove and delete" : "Remove from shelf")
-        }
-    }
-
-    /// Covers the preview, with a hole punched at the top-right corner so the
-    /// remove badge drawn underneath it still receives clicks.
     private var dragLayer: some View {
         FileDragSource(
-            urls: { [item.url] },
+            urls: urls,
             onSessionBegan: onDragBegan,
             onSessionEnded: onDragEnded,
-            onClick: onQuickLook,
+            onMouseDown: onMouseDown,
+            onClick: onClick,
             onDoubleClick: onOpen,
             menuBuilder: menuBuilder,
-            passthroughRect: {
-                // Only while the badge is actually there — otherwise a corner of
-                // every tile would quietly refuse to start a drag.
-                isHovering
-                    ? CGRect(x: Self.size - 22, y: 0, width: 26, height: 26)
-                    : .zero
-            }
+            operationMask: operationMask,
+            itemID: item.id,
+            onSelectItem: onSelectItem,
+            onClearSelection: onClearSelection,
+            onSelectAll: onSelectAll,
+            onRemove: onRemove,
+            onHover: { isHovering = $0 }
         )
-        .frame(width: Self.size, height: Self.size)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

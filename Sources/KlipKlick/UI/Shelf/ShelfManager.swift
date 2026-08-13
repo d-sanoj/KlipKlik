@@ -20,6 +20,9 @@ final class ShelfManager {
     /// Shelf the current pad drop is filling. One drag can deliver several items
     /// asynchronously, and they all belong on the same shelf.
     private var padShelfID: UUID?
+    /// Consumed by `openWindow` so a pad drop can grow out of the notch and a
+    /// hot-key shelf can pop, without every restored window replaying either.
+    private var pendingEntrance: ShelfAppearance.Entrance = .none
     private var hotKey: CarbonHotKey?
     private var cancellables = Set<AnyCancellable>()
 
@@ -34,11 +37,15 @@ final class ShelfManager {
         }
 
         pad.onDropFiles = { [weak self] urls, point in
-            guard let self, let id = padShelf(at: point) else { return }
+            guard let self, let id = padShelf(at: point, intake: .copy) else { return }
             store.add(urls: urls, to: id)
         }
+        pad.onDropMovingFiles = { [weak self] urls, point in
+            guard let self, let id = padShelf(at: point, intake: .move) else { return }
+            store.addMoving(urls: urls, to: id)
+        }
         pad.onDropStagedFile = { [weak self] url, point in
-            guard let self, let id = padShelf(at: point) else { return }
+            guard let self, let id = padShelf(at: point, intake: .copy) else { return }
             store.add(promised: url, to: id)
         }
 
@@ -121,9 +128,11 @@ final class ShelfManager {
     }
 
     /// The shelf a pad drop belongs to, created on the first item of that drop.
-    private func padShelf(at point: NSPoint) -> UUID? {
+    private func padShelf(at point: NSPoint, intake: Shelf.Intake) -> UUID? {
         if let padShelfID, store.shelf(padShelfID) != nil { return padShelfID }
-        let shelf = store.addShelf(at: point)
+        pendingEntrance = .fromNotch
+        let shelf = store.addShelf(at: point, intake: intake)
+        pendingEntrance = .none
         padShelfID = shelf.id
         return shelf.id
     }
@@ -133,7 +142,9 @@ final class ShelfManager {
     /// A new empty shelf under the pointer — the menu item and the hot key.
     func newShelf() {
         guard Settings.shared.shelvesEnabled else { return }
+        pendingEntrance = .appear
         store.addShelf()
+        pendingEntrance = .none
     }
 
     func closeAllShelves() {
@@ -159,7 +170,14 @@ final class ShelfManager {
 
         // The newest shelf, or a new one — dropping into whichever shelf is
         // already open is what the user means by "add to shelf" when there is one.
-        let id = store.shelves.last?.id ?? store.addShelf().id
+        let id: UUID
+        if let existing = store.shelves.last?.id {
+            id = existing
+        } else {
+            pendingEntrance = .appear
+            id = store.addShelf().id
+            pendingEntrance = .none
+        }
         store.add(urls: urls, to: id)
         controllers[id]?.show()
         return true
@@ -190,13 +208,14 @@ final class ShelfManager {
     // MARK: Windows
 
     private func openWindow(for id: UUID) {
+        let entrance = pendingEntrance
         if let existing = controllers[id] {
-            existing.show()
+            existing.show(entrance: entrance)
             return
         }
         let controller = ShelfWindowController(shelfID: id, store: store, manager: self)
         controllers[id] = controller
-        controller.show()
+        controller.show(entrance: entrance)
     }
 
     private func closeWindow(for id: UUID) {
