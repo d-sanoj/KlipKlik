@@ -14,6 +14,30 @@ enum ClipKind: String, Codable {
     case file
     case folder
 
+    /// Classifies a file by what it is on disk, then by its extension.
+    ///
+    /// Shared with the shelf, which classifies one file at a time — the same
+    /// question asked of a single URL rather than a pasteboard selection.
+    init(file url: URL) {
+        // A plain directory is a folder; a package (.app, .rtfd) is a directory
+        // on disk too but the user thinks of it as a single file.
+        let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+        if values?.isDirectory == true && values?.isPackage != true {
+            self = .folder
+            return
+        }
+
+        guard let type = UTType(filenameExtension: url.pathExtension) else {
+            self = .file
+            return
+        }
+
+        if type.conforms(to: .image) { self = .image }
+        else if type.conforms(to: .movie) || type.conforms(to: .audiovisualContent) { self = .video }
+        else if type.conforms(to: .audio) { self = .audio }
+        else { self = .file }
+    }
+
     /// Human-readable name, as shown on the hover card's "Type" line.
     var label: String {
         switch self {
@@ -233,18 +257,7 @@ extension ClipboardItem {
     /// Classifies by the first file; a mixed selection takes that file's kind.
     private static func kind(forFiles urls: [URL]) -> ClipKind {
         guard let first = urls.first else { return .file }
-
-        // A plain directory is a folder; a package (.app, .rtfd) is a directory
-        // on disk too but the user thinks of it as a single file.
-        let values = try? first.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
-        if values?.isDirectory == true && values?.isPackage != true { return .folder }
-
-        guard let type = UTType(filenameExtension: first.pathExtension) else { return .file }
-
-        if type.conforms(to: .image) { return .image }
-        if type.conforms(to: .movie) || type.conforms(to: .audiovisualContent) { return .video }
-        if type.conforms(to: .audio) { return .audio }
-        return .file
+        return ClipKind(file: first)
     }
 
     private static func title(forFiles urls: [URL]) -> String {

@@ -14,6 +14,10 @@ struct ItemRow: View {
     let onActivate: (_ invertFormatting: Bool) -> Void
     let onTogglePin: () -> Void
     let onHover: (Bool) -> Void
+    /// Only file-bearing items can go on a shelf, so the menu entry is offered
+    /// rather than shown greyed out on every row of text.
+    var canShelve: Bool = false
+    var onAddToShelf: () -> Void = {}
 
     var body: some View {
         HStack(spacing: Metrics.rowSpacing) {
@@ -46,6 +50,17 @@ struct ItemRow: View {
             onActivate(flags.contains(.option) && flags.contains(.shift))
         }
         .onHover(perform: onHover)
+        .contextMenu { menu }
+    }
+
+    @ViewBuilder
+    private var menu: some View {
+        Button("Paste") { onActivate(false) }
+        Button(item.pinned ? "Unpin" : "Pin", action: onTogglePin)
+        if canShelve {
+            Divider()
+            Button("Add to Shelf", action: onAddToShelf)
+        }
     }
 
     private var rowBackground: Color {

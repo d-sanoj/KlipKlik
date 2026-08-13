@@ -21,6 +21,7 @@ pointer is — type to search, ↩ to paste.
 
 - **Clipboard history** — text, rich text, links, colours, images, and files, with search and pinning.
 - **Keyboard-first** — double-tap ⌘ to open, arrows to move, ↩ to paste, ⌘ 1…9 to grab the *n*th item.
+- **Drag shelves** — pick up any file and a drop target appears; park files there, then drag them back out wherever you're going.
 - **Strip formatting** — paste as plain text, with a one-off override while choosing.
 - **Colour picker** — sample any pixel on screen, get `#RRGGBB` on the clipboard.
 - **Screen text grab** — drag a box over anything readable and copy the *text*, indentation and blank lines intact.
@@ -85,6 +86,49 @@ Ad-hoc signatures change on every rebuild, and macOS ties Accessibility and
 Screen Recording to the signature — so those grants lapse each time you build
 unless you set a signing identity.
 
+## Drag shelves
+
+Start dragging any file and the notch grows a small lip. Drag up to it and it
+opens into a tray; let go and it becomes a shelf — a floating window that stays
+above everything and follows you across spaces. Fill it from anywhere — Finder,
+a web page, Mail — then drag the contents back out where you actually want them.
+
+The target is the notch every time, not wherever the pointer happened to be. A
+fixed target can be learned, and it sits against the top edge of the screen, so
+you can throw the pointer at it rather than aim. On a Mac with no notch — an
+external display, a Mac mini — the same tray appears in the same place, centred
+under the menu bar.
+
+Dropping *in* never touches the original. Files from Finder are held by path, so
+shelving a 4 GB video costs a string and no disk. Only content with no file
+behind it — an image dragged out of a browser, a text selection, a promised file
+from Photos or Mail — is written to disk, because there is nothing else to point
+at. A dragged link becomes a `.webloc`, as it would on the Desktop.
+
+Dragging *out* copies or moves exactly as the destination decides, the same as
+any other macOS drag. The shelf never deletes anything itself: after a move it
+checks whether the file is actually gone and only then drops the row.
+
+| | |
+| --- | --- |
+| Drop on the notch | New shelf, opening below it |
+| `⌥ ⌘ S` | New empty shelf |
+| Drag a tile out | Copy, or move — the destination and modifier keys decide |
+| Click a tile | Quick Look |
+| Double-click | Open |
+| Right-click | Open With, Reveal, Copy, Copy Path, Remove |
+| Double-click the title | Rename |
+| Hover the shelf | Action bar — move to the front Finder window, copy, Quick Look, reveal, zip, share |
+
+**Move to the front Finder window** is the ⌘X trick from cut-and-move: the files
+go on the pasteboard and Finder is sent ⌥⌘V, so Finder's own conflict handling,
+progress sheet, and undo do the work. It is the one part of the shelf that needs
+Accessibility. Everything else — including the drop target appearing on a drag —
+needs no permission at all.
+
+Shelves are **not** kept after quitting unless you turn that on in
+**Settings ▸ Shelf**. The reason is in the next section.
+
 ## Storage and privacy
 
 Clipboard content is held in memory for five minutes after being copied, then
@@ -110,8 +154,21 @@ or to anything grepping the disk for readable text. It does not protect against
 a process already running as your user, which can read the key as easily as the
 app can. Only a signed build with a real Keychain entitlement would.
 
-**Settings ▸ Storage** shows all three figures — memory, cache, archive — and
-clears each independently.
+Shelves are the one exception to the encryption rule, and it is worth being
+plain about why. A shelf's *structure* — names, tints, positions, and the paths
+of referenced files — is sealed like everything else. Its **staged bytes are
+not**: dragging an item off a shelf hands another application a real `file://`
+URL, and a sealed blob is not a file any other app can open. Decrypting to a
+temporary file at drag time would put the same plaintext on the same disk a
+moment later and buy nothing.
+
+So staged content is as private as the folder it sits in, which is why shelves
+do not survive quitting by default, and why anything dragged in from Finder is
+referenced rather than copied — the case that would stage bytes is the
+uncommon one.
+
+**Settings ▸ Storage** shows all four figures — memory, cache, archive, and
+bytes staged for shelves — and clears each independently.
 
 ## Shortcuts
 
@@ -124,6 +181,8 @@ clears each independently.
 | `⌥ ⇧ ↩` | Invert "Strip Format" for one paste |
 | `⌘ 1…9` | Paste the *n*th item |
 | `⌥ P` | Pin / unpin |
+| `⌥ S` | Put the selected item's files on a shelf |
+| `⌥ ⌘ S` | New shelf |
 | `⌘ ⌫` | Delete item |
 | `⌥ ⌘ ⌫` | Clear history (keeps pinned) |
 | `⌘ ,` | Settings |
@@ -136,6 +195,8 @@ clears each independently.
 | History, search, pinning, the popup | — |
 | `⇧ ⌘ C` | — |
 | Double-tap ⌘, auto-paste, ⌘ X cut-and-move | Accessibility |
+| Shelf "Move to Front Finder Window" | Accessibility |
+| Shelves, the drop target, drag in and out | — |
 | Screen text grab | Screen Recording |
 
 Grant them in **System Settings ▸ Privacy & Security**.
@@ -157,7 +218,9 @@ each one its own **Open Settings…** and **Reset permission** button.
 Sources/KlipKlick/
   AppDelegate.swift    Menu bar item, clock, status menu
   Core/                Clipboard monitor, history, capture tools, settings
+  Core/Shelf/          Drag detection, shelf model, storage, file actions
   UI/                  Popup, preferences, theme
+  UI/Shelf/            Shelf windows, drop target, tiles, drag source
   Models/              Clipboard item capture and classification
 Scripts/
   build_app.sh         Compile and assemble the .app

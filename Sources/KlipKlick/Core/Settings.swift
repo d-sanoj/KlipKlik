@@ -40,6 +40,33 @@ enum AnchorMode: String, CaseIterable, Identifiable {
     var label: String { self == .cursor ? "Mouse cursor" : "Menu bar icon" }
 }
 
+/// What summons a shelf.
+enum ShelfTrigger: String, CaseIterable, Identifiable {
+    /// A landing pad appears beside the pointer the moment any drag starts.
+    case automatic
+    /// Nothing appears on its own; shelves come from the menu or the hot key.
+    case manual
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .automatic: return "When a drag starts"
+        case .manual: return "Only from the menu or ⌥⌘S"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .automatic:
+            return "Pick up any file and a drop target appears beside the pointer. "
+                + "It needs no permissions, and it goes away by itself if you drop elsewhere."
+        case .manual:
+            return "Nothing appears while you drag. Open a shelf first, then drop into it."
+        }
+    }
+}
+
 final class Settings: ObservableObject {
     static let shared = Settings()
 
@@ -56,6 +83,9 @@ final class Settings: ObservableObject {
         static let glassOpacity = "glassOpacity"
         static let menuBarTimeZone = "menuBarTimeZone"
         static let ignoredApps = "ignoredApps"
+        static let shelvesEnabled = "shelvesEnabled"
+        static let shelfTrigger = "shelfTrigger"
+        static let shelvesPersist = "shelvesPersist"
     }
 
     @Published var theme: ThemePreference {
@@ -157,6 +187,27 @@ final class Settings: ObservableObject {
         didSet { UserDefaults.standard.set(ignoredApps, forKey: Key.ignoredApps) }
     }
 
+    /// Drag shelves: floating trays you drop files into and drag back out.
+    @Published var shelvesEnabled: Bool {
+        didSet { UserDefaults.standard.set(shelvesEnabled, forKey: Key.shelvesEnabled) }
+    }
+
+    @Published var shelfTrigger: ShelfTrigger {
+        didSet { UserDefaults.standard.set(shelfTrigger.rawValue, forKey: Key.shelfTrigger) }
+    }
+
+    /// Whether shelves survive quitting.
+    ///
+    /// Off by default, and deliberately so. Everything else KlipKlick keeps
+    /// between launches is either metadata or sealed, but a shelf's staged
+    /// content has to be a real readable file for a drag out of it to work at
+    /// all — so persistence means plain files on disk until the user clears
+    /// them. That is a fair trade for a shelf you are still filling, and the
+    /// wrong default for an app whose promise is that nothing outlives a session.
+    @Published var shelvesPersist: Bool {
+        didSet { UserDefaults.standard.set(shelvesPersist, forKey: Key.shelvesPersist) }
+    }
+
     func isIgnored(_ bundleID: String?) -> Bool {
         guard let bundleID else { return false }
         return ignoredApps.contains(bundleID)
@@ -181,7 +232,10 @@ final class Settings: ObservableObject {
             Key.finderCutMove: true,
             Key.glassOpacity: 0.30,
             Key.menuBarTimeZone: "",
-            Key.ignoredApps: [String]()
+            Key.ignoredApps: [String](),
+            Key.shelvesEnabled: true,
+            Key.shelfTrigger: ShelfTrigger.automatic.rawValue,
+            Key.shelvesPersist: false
         ])
 
         theme = ThemePreference(rawValue: defaults.string(forKey: Key.theme) ?? "") ?? .auto
@@ -197,6 +251,10 @@ final class Settings: ObservableObject {
         glassOpacity = defaults.double(forKey: Key.glassOpacity)
         menuBarTimeZone = defaults.string(forKey: Key.menuBarTimeZone) ?? ""
         ignoredApps = defaults.stringArray(forKey: Key.ignoredApps) ?? []
+        shelvesEnabled = defaults.bool(forKey: Key.shelvesEnabled)
+        shelfTrigger = ShelfTrigger(rawValue: defaults.string(forKey: Key.shelfTrigger) ?? "")
+            ?? .automatic
+        shelvesPersist = defaults.bool(forKey: Key.shelvesPersist)
     }
 
     func applyAppearance() {

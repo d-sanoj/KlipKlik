@@ -34,6 +34,13 @@ final class PopupController: NSObject, NSWindowDelegate {
     var onWillShow: (() -> Void)?
     /// Screen frame of the status-bar item, for `AnchorMode.icon`.
     var iconScreenFrame: (() -> NSRect?)?
+    /// Shelves a file item. See `PopupViewModel.onAddToShelf`.
+    var onAddToShelf: ((ClipboardItem) -> Bool)? {
+        didSet { viewModel.onAddToShelf = onAddToShelf }
+    }
+    var canAddToShelf: ((ClipboardItem) -> Bool)? {
+        didSet { viewModel.canAddToShelf = canAddToShelf }
+    }
 
     var isVisible: Bool { panel.isVisible }
 
@@ -389,6 +396,10 @@ final class PopupController: NSObject, NSWindowDelegate {
 
         case kVK_ANSI_P where option:
             viewModel.togglePinSelected()
+            return true
+
+        case kVK_ANSI_S where option:
+            viewModel.addSelectedToShelf()
             return true
 
         case kVK_Delete where command && option:

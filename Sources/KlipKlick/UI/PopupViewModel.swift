@@ -31,6 +31,12 @@ final class PopupViewModel: ObservableObject {
     var onOpenPreferences: (() -> Void)?
     var onPickColor: (() -> Void)?
     var onGrabText: (() -> Void)?
+    /// Puts a file item's files on a shelf. Returns false when there was nothing
+    /// shelvable, so the caller can leave the popup open rather than closing it
+    /// on an action that did nothing.
+    var onAddToShelf: ((ClipboardItem) -> Bool)?
+    /// Whether the shelf action should be offered for this item at all.
+    var canAddToShelf: ((ClipboardItem) -> Bool)?
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -159,6 +165,21 @@ final class PopupViewModel: ObservableObject {
     func deleteSelected() {
         guard let item = selectedItem else { return }
         store.remove(item)
+    }
+
+    func canShelve(_ item: ClipboardItem) -> Bool {
+        canAddToShelf?(item) ?? false
+    }
+
+    /// ⌥S on the selected row, and the row's context menu.
+    func addToShelf(_ item: ClipboardItem) {
+        guard onAddToShelf?(item) == true else { return }
+        onClose?()
+    }
+
+    func addSelectedToShelf() {
+        guard let item = selectedItem else { return }
+        addToShelf(item)
     }
 
     /// Footer "Clear History" — keeps pinned items.

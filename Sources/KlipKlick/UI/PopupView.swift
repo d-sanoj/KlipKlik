@@ -111,7 +111,9 @@ struct PopupView: View {
                 } else if viewModel.hoveredID == item.id {
                     viewModel.hoveredID = nil
                 }
-            }
+            },
+            canShelve: viewModel.canShelve(item),
+            onAddToShelf: { viewModel.addToShelf(item) }
         )
         .id(item.id)
     }

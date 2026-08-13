@@ -2,13 +2,14 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum PrefsTab: String, CaseIterable, Identifiable {
-    case general, shortcuts, appearance, ignored, storage
+    case general, shelf, shortcuts, appearance, ignored, storage
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
         case .general: return "General"
+        case .shelf: return "Shelf"
         case .shortcuts: return "Shortcuts"
         case .appearance: return "Appearance"
         case .ignored: return "Ignored Apps"
@@ -155,6 +156,7 @@ struct PreferencesView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     switch tab {
                     case .general: general
+                    case .shelf: shelf
                     case .shortcuts: shortcuts
                     case .appearance: appearance
                     case .ignored: ignored
@@ -200,6 +202,55 @@ struct PreferencesView: View {
             pastingSection
             behaviourSection
             historySection
+        }
+    }
+
+    // MARK: Shelf
+
+    private var shelf: some View {
+        VStack(spacing: 0) {
+            PrefRow(palette: palette, showsDivider: false) {
+                Text("Drag shelves").prefLabel(palette)
+            } trailing: {
+                SwitchToggle(isOn: $settings.shelvesEnabled, palette: palette)
+            }
+
+            Caption(
+                "Floating trays you drop files into and drag back out. "
+                    + "⌥ ⌘ S opens an empty one.",
+                palette: palette,
+                dividing: true
+            )
+
+            PrefRow(palette: palette, showsDivider: true) {
+                Text("Show a drop target").prefLabel(palette)
+            } trailing: {
+                SegmentedPicker(selection: $settings.shelfTrigger, palette: palette) { $0.label }
+                    .disabled(!settings.shelvesEnabled)
+                    .opacity(settings.shelvesEnabled ? 1 : 0.4)
+            }
+
+            Caption(settings.shelfTrigger.detail, palette: palette, dividing: true)
+
+            PrefRow(palette: palette, showsDivider: true) {
+                Text("Keep shelves after quitting").prefLabel(palette)
+            } trailing: {
+                SwitchToggle(isOn: $settings.shelvesPersist, palette: palette)
+                    .disabled(!settings.shelvesEnabled)
+                    .opacity(settings.shelvesEnabled ? 1 : 0.4)
+            }
+
+            // Stated rather than buried: everything else KlipKlick keeps between
+            // launches is sealed, and this one thing cannot be.
+            Caption(
+                "Files you dropped in from Finder are only ever referenced, never copied. "
+                    + "Anything with no file behind it — an image from a web page, a text "
+                    + "snippet — is written into Application Support as a plain readable file, "
+                    + "because a drag out of the shelf has to hand another app a real file. "
+                    + "Off by default for that reason.",
+                palette: palette,
+                dividing: false
+            )
         }
     }
 
@@ -322,6 +373,12 @@ struct PreferencesView: View {
                 KeyChip(text: "⌘ X", palette: palette, muted: false, monospaced: true)
             }
 
+            PrefRow(palette: palette, showsDivider: true) {
+                Text("New Shelf").prefLabel(palette)
+            } trailing: {
+                KeyChip(text: "⌥ ⌘ S", palette: palette, muted: false, monospaced: true)
+            }
+
             Text("Custom shortcuts coming later.")
                 .font(.system(size: 12))
                 .italic()
@@ -408,6 +465,7 @@ struct PreferencesView: View {
         ("Invert strip formatting", "⌥ ⇧ ↩"),
         ("Paste nth item", "⌘ 1 … ⌘ 9"),
         ("Pin / unpin", "⌥ P"),
+        ("Add files to a shelf", "⌥ S"),
         ("Delete item", "⌘ ⌫"),
         ("Clear history", "⌥ ⌘ ⌫"),
         ("Close", "esc")
@@ -544,7 +602,7 @@ struct PreferencesView: View {
                 .padding(.bottom, 4)
 
             Text("\(formattedFootprint) in memory · \(formattedCache) cached · "
-                + "\(formattedArchive) pinned on disk")
+                + "\(formattedArchive) pinned on disk · \(formattedStaged) staged for shelves")
                 .font(.system(size: 12))
                 .foregroundStyle(palette.textTertiary)
                 .padding(.bottom, 4)
@@ -704,6 +762,7 @@ struct PreferencesView: View {
 
     private var formattedCache: String { Self.bytes(DiskStore.shared.bytes(pinned: false)) }
     private var formattedArchive: String { Self.bytes(DiskStore.shared.bytes(pinned: true)) }
+    private var formattedStaged: String { Self.bytes(ShelfStorage.stagedBytes()) }
 
     private static func bytes(_ count: Int) -> String {
         let formatter = ByteCountFormatter()

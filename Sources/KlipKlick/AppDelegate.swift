@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var popup: PopupController!
     private var doubleTap: DoubleTapCommandMonitor!
     private var finderCutMove: FinderCutMove!
+    private var shelves: ShelfManager!
     private var fallbackHotKey: CarbonHotKey?
     private var statusItem: NSStatusItem!
     private var preferences: PreferencesWindowController!
@@ -25,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var timeZoneItems: [String: NSMenuItem] = [:]
     private var timeZoneMenuItem: NSMenuItem!
     private var stripFormattingItem: NSMenuItem!
+    private var newShelfItem: NSMenuItem!
     /// Disabled row at the top of the Timezone submenu naming the current zone.
     private var selectedZoneHeader: NSMenuItem!
 
@@ -74,6 +76,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         monitor.start()
         purge.start()
 
+        // Started after the monitor, so its own pasteboard writes have something
+        // to report to.
+        shelves = ShelfManager()
+        shelves.onDidWriteToPasteboard = { [weak self] changeCount in
+            self?.monitor.ignoreChangeCount(changeCount)
+        }
+        popup.onAddToShelf = { [weak self] item in
+            guard let self else { return false }
+            return shelves.addToShelf(item, from: store)
+        }
+        popup.canAddToShelf = { [weak self] item in
+            guard let self, Settings.shared.shelvesEnabled else { return false }
+            return ShelfManager.canShelve(item, from: store)
+        }
+        shelves.start()
+
         finderCutMove = FinderCutMove()
         finderCutMove.onArmedChanged = { [weak self] armed in
             self?.setStatusIcon(cutPending: armed)
@@ -109,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         monitor.stop()
         doubleTap.stop()
         finderCutMove.stop()
+        shelves.stop()
         clockTimer?.invalidate()
         // Pinned items are an archive and stay; everything else, including its
         // encrypted swap on disk, goes with the session.
@@ -200,6 +219,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             action: #selector(openPopup),
             keyEquivalent: ""
         ).target = self
+
+        newShelfItem = menu.addItem(
+            withTitle: "New Shelf",
+            action: #selector(newShelf),
+            keyEquivalent: ""
+        )
+        newShelfItem.target = self
 
         // Same wording as the Preferences row, and the same underlying setting:
         // this is that switch, not a second one that could disagree with it.
@@ -453,9 +479,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshTimeZoneMenu()
         // Preferences may have moved it since this menu was last opened.
         stripFormattingItem?.state = Settings.shared.stripFormatting ? .on : .off
+        // Hidden rather than disabled: a permanently greyed row for a feature you
+        // turned off is just clutter explaining itself.
+        newShelfItem?.isHidden = !Settings.shared.shelvesEnabled
     }
 
     @objc private func openPopup() { popup.show() }
+
+    @objc private func newShelf() { shelves.newShelf() }
 
     @objc private func openPreferences() { preferences.show() }
 
@@ -495,6 +526,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ) { [weak self] _ in
             self?.preferences.show()
         }
+        // Opens a shelf, and fills it with whatever paths the notification
+        // carries. The shelf is a drag target, and a drag is the one gesture
+        // that cannot be synthesised without Accessibility — so this is the only
+        // way to exercise the window itself during development.
+        center.addObserver(
+            forName: Notification.Name("com.sanoj.KlipKlick.newShelf"),
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self else { return }
+            let shelf = shelves.store.addShelf()
+            if let paths = note.object as? String, !paths.isEmpty {
+                let urls = paths.split(separator: "|").map { URL(fileURLWithPath: String($0)) }
+                shelves.store.add(urls: urls, to: shelf.id)
+            }
+        }
+
+        // Shows the notch drop pad. A drag cannot be synthesised at all — it is a
+        // modal tracking loop in another process — so this is the only way to
+        // look at the pad during development. Object "targeted" shows the
+        // expanded state, anything else the waiting one, and "off" hides it.
+        center.addObserver(
+            forName: Notification.Name("com.sanoj.KlipKlick.showPad"),
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            let mode = note.object as? String ?? ""
+            mode == "off"
+                ? self?.shelves.dismissPad()
+                : self?.shelves.previewPad(targeted: mode == "targeted")
+        }
+
         // Pins the newest two entries, so the PINNED section can be exercised
         // without a mouse or keyboard.
         center.addObserver(
