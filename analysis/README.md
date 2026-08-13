@@ -28,6 +28,7 @@ If you only read two files, read [05-permissions.md](05-permissions.md) and
 | [09-distribution.md](09-distribution.md) | Gatekeeper, notarization, Homebrew, DMG |
 | [10-decisions.md](10-decisions.md) | Decision log — what was chosen and what it cost |
 | [11-what-i-got-wrong.md](11-what-i-got-wrong.md) | The mistakes, including two that shipped |
+| [12-drag-shelf.md](12-drag-shelf.md) | Drag shelves, and detecting a drag with no permissions |
 
 ## The short version
 
