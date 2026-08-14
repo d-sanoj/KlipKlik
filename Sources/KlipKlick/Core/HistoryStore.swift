@@ -66,7 +66,53 @@ final class HistoryStore: ObservableObject {
 
         items.insert(item, at: 0)
         applyLimit()
+        compactImageBytes(of: item)
     }
+
+    /// Shrinks an item's image bytes just after capture.
+    ///
+    /// Off the main thread deliberately: transcoding a full-screen TIFF takes
+    /// ~85 ms, which on the capture path would be a visible hitch on every
+    /// image copy. The item goes into the list immediately as captured, and its
+    /// bytes are swapped for the smaller ones a moment later.
+    private func compactImageBytes(of item: ClipboardItem) {
+        guard let representations = item.representations else { return }
+        let id = item.id
+
+        let debug = ProcessInfo.processInfo.environment["KLIPKLICK_DEBUG"] != nil
+        let before = debug
+            ? representations.reduce(0) { $0 + $1.values.reduce(0) { $0 + $1.count } }
+            : 0
+
+        Self.compactionQueue.async {
+            guard let result = ClipboardItem.compacting(representations) else { return }
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      let index = items.firstIndex(where: { $0.id == id }),
+                      // Offloaded, cleared or re-captured while we were working:
+                      // whatever is there now is not what we compacted.
+                      items[index].representations != nil
+                else { return }
+                items[index].representations = result.bags
+                items[index].restoresTIFF = result.restoresTIFF
+
+                if debug {
+                    let after = result.bags.reduce(0) { $0 + $1.values.reduce(0) { $0 + $1.count } }
+                    let line = String(
+                        format: "compact %@ %.1f KB -> %.1f KB\n",
+                        id.uuidString.prefix(8) as CVarArg,
+                        Double(before) / 1024, Double(after) / 1024
+                    )
+                    FileHandle.standardError.write(line.data(using: .utf8)!)
+                }
+            }
+        }
+    }
+
+    private static let compactionQueue = DispatchQueue(
+        label: "com.sanoj.KlipKlick.compaction", qos: .utility
+    )
 
     func togglePin(_ item: ClipboardItem) {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }

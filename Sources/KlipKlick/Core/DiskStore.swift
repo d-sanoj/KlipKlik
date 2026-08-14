@@ -31,6 +31,9 @@ final class DiskStore {
         let createdAt: Date
         let fingerprint: String
         var pinned: Bool
+        /// Optional so an index written before image compaction existed still
+        /// decodes; absent means the blob holds its original TIFF.
+        var restoresTIFF: Bool?
     }
 
     private let root: URL
@@ -118,7 +121,7 @@ final class DiskStore {
             Stub(
                 id: $0.id, kind: $0.kind, title: $0.title, plainText: $0.plainText,
                 colorHex: $0.colorHex, sourceApp: $0.sourceApp, createdAt: $0.createdAt,
-                fingerprint: $0.fingerprint, pinned: true
+                fingerprint: $0.fingerprint, pinned: true, restoresTIFF: $0.restoresTIFF
             )
         }
         do {
@@ -147,7 +150,8 @@ final class DiskStore {
             ClipboardItem(
                 id: $0.id, kind: $0.kind, title: $0.title, plainText: $0.plainText,
                 colorHex: $0.colorHex, representations: nil, sourceApp: $0.sourceApp,
-                createdAt: $0.createdAt, fingerprint: $0.fingerprint, pinned: true
+                createdAt: $0.createdAt, fingerprint: $0.fingerprint, pinned: true,
+                restoresTIFF: $0.restoresTIFF ?? false
             )
         }
     }

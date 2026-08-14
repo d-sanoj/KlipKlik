@@ -80,6 +80,10 @@ struct ClipboardItem: Identifiable, Equatable, Codable {
     let fingerprint: String
     /// Pinned items sort into their own section and survive "Clear History".
     var pinned: Bool
+    /// Set when the uncompressed `public.tiff` flavour was replaced by PNG, so
+    /// `write(to:)` knows to rebuild it for anything that asks. See
+    /// `compacting(_:)`.
+    var restoresTIFF: Bool = false
 
     init(
         id: UUID = UUID(),
@@ -91,7 +95,8 @@ struct ClipboardItem: Identifiable, Equatable, Codable {
         sourceApp: String? = nil,
         createdAt: Date = Date(),
         fingerprint: String,
-        pinned: Bool = false
+        pinned: Bool = false,
+        restoresTIFF: Bool = false
     ) {
         self.id = id
         self.kind = kind
@@ -103,6 +108,7 @@ struct ClipboardItem: Identifiable, Equatable, Codable {
         self.createdAt = createdAt
         self.fingerprint = fingerprint
         self.pinned = pinned
+        self.restoresTIFF = restoresTIFF
     }
 
     static func == (lhs: ClipboardItem, rhs: ClipboardItem) -> Bool {
@@ -361,6 +367,61 @@ extension ClipboardItem {
     }
 }
 
+// MARK: - Compaction
+
+extension ClipboardItem {
+    static let tiffType = NSPasteboard.PasteboardType.tiff.rawValue
+    static let pngType = NSPasteboard.PasteboardType.png.rawValue
+
+    /// Replaces the uncompressed TIFF flavour with PNG.
+    ///
+    /// Apps copy a picture by handing AppKit an `NSImage`, and what lands on the
+    /// pasteboard is `public.tiff` — uncompressed. A full-screen grab that is
+    /// 1.8 MB as PNG arrives as 23 MB of TIFF, and every byte of that sat in RAM
+    /// until the offload five minutes later. Two screenshots put the app past
+    /// 40 MB on their own.
+    ///
+    /// PNG is lossless, so nothing is given up: `write(to:)` rebuilds a
+    /// byte-identical TIFF for anything that asks for one. Some apps write both
+    /// flavours, in which case the TIFF is simply dropped and nothing is
+    /// transcoded at all.
+    ///
+    /// Returns nil when there was nothing worth doing — the caller then leaves
+    /// the item exactly as captured.
+    static func compacting(
+        _ representations: [[String: Data]]
+    ) -> (bags: [[String: Data]], restoresTIFF: Bool)? {
+        guard representations.contains(where: { $0[tiffType] != nil }) else { return nil }
+
+        var bags = representations
+        var changed = false
+
+        for index in bags.indices {
+            guard let tiff = bags[index][tiffType] else { continue }
+
+            // Pooled explicitly. Decoding a TIFF produces an uncompressed bitmap
+            // the same size as the TIFF itself — 23 MB for a full-screen grab —
+            // and `NSBitmapImageRep` is autoreleased. Without a pool that drains
+            // here, those bitmaps outlive the transcode and cost more than the
+            // compaction saves.
+            let compressed: Data? = autoreleasepool {
+                if let existing = bags[index][pngType] { return existing }
+                return NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
+            }
+
+            // A small or already-compressed image can encode *larger* as PNG,
+            // and an undecodable TIFF yields nothing — leave both alone.
+            guard let compressed, compressed.count < tiff.count else { continue }
+
+            bags[index][pngType] = compressed
+            bags[index][tiffType] = nil
+            changed = true
+        }
+
+        return changed ? (bags, true) : nil
+    }
+}
+
 // MARK: - Restore
 
 extension ClipboardItem {
@@ -389,6 +450,18 @@ extension ClipboardItem {
         }
 
         let items: [NSPasteboardItem] = representations.map { bag in
+            var bag = bag
+            // Put back the TIFF that `compacting(_:)` swapped out. Rebuilt from
+            // the PNG, which is lossless, so this is the same image the source
+            // app put on the pasteboard — apps that ask only for `public.tiff`
+            // must still find it.
+            if restoresTIFF,
+               bag[Self.tiffType] == nil,
+               let png = bag[Self.pngType],
+               let tiff = NSBitmapImageRep(data: png)?.tiffRepresentation {
+                bag[Self.tiffType] = tiff
+            }
+
             let item = NSPasteboardItem()
             for (type, data) in bag {
                 item.setData(data, forType: NSPasteboard.PasteboardType(type))
