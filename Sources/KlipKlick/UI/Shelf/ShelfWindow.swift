@@ -135,6 +135,26 @@ final class ShelfWindowController: NSObject, NSWindowDelegate {
         let hosting = NSHostingController(rootView: view)
         hosting.sizingOptions = [.preferredContentSize]
         panel.contentViewController = hosting
+
+        // The glass is an `NSGlassEffectView` — a real AppKit view, and SwiftUI's
+        // `.clipShape` cannot mask one: a clip shape only bounds SwiftUI's own
+        // drawing, so the glass went on rendering its square edge past the
+        // rounded corners as a hairline overshoot on all four sides.
+        //
+        // Masking the content view's layer clips the actual view hierarchy, glass
+        // included. `.continuous` so the curve matches the squircle `ShelfView`
+        // draws its border and clip shape with, rather than the circular arc a
+        // bare `cornerRadius` would give.
+        if let content = panel.contentView {
+            content.wantsLayer = true
+            content.layer?.cornerRadius = Metrics.cornerRadius
+            content.layer?.cornerCurve = .continuous
+            content.layer?.masksToBounds = true
+            // Belt and braces with `focusEffectDisabled()` in `ShelfView`: this
+            // is the AppKit half, for a ring drawn by the hosting view itself.
+            content.focusRingType = .none
+        }
+
         installKeyMonitor()
     }
 
@@ -166,11 +186,11 @@ final class ShelfWindowController: NSObject, NSWindowDelegate {
                 self?.appearance.revealed = true
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-                self?.panel.hasShadow = true
+                self?.enableShadow()
             }
         } else {
             appearance.revealed = true
-            panel.hasShadow = true
+            enableShadow()
         }
 
         store.pruneMissing(in: shelfID)
@@ -199,13 +219,25 @@ final class ShelfWindowController: NSObject, NSWindowDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                 guard let self else { return }
                 self.panel.level = .floating
-                self.panel.hasShadow = true
+                self.enableShadow()
                 self.anchorTopLeft = CGPoint(x: rest.minX, y: rest.maxY)
                 self.store.setWindowTopLeft(self.shelfID, self.anchorTopLeft)
                 self.isAdjustingFrame = false
                 self.isAnimatingBirth = false
             }
         }
+    }
+
+    /// Turns the shadow on and forces it to be recomputed.
+    ///
+    /// AppKit derives a borderless window's shadow from the alpha of its content
+    /// and then caches the result. Flipping `hasShadow` during the entrance
+    /// animation baked in the shape the content had at that instant — a square —
+    /// which is the dark outline that showed just outside the rounded corners.
+    /// It never got recomputed afterwards, so it outlived the animation.
+    private func enableShadow() {
+        panel.hasShadow = true
+        panel.invalidateShadow()
     }
 
     /// Centred on the housing, a clear gap below the menu bar so the shelf is
@@ -346,11 +378,22 @@ final class ShelfWindowController: NSObject, NSWindowDelegate {
         }
         keepOnScreen()
         isAdjustingFrame = false
+        // The cached shadow is for the old size — a shelf that grew a row would
+        // otherwise keep the previous outline until it was moved.
+        if panel.hasShadow { panel.invalidateShadow() }
+    }
+
+    /// macOS swaps a key window onto a deeper shadow, recomputed at that moment
+    /// — which is what made a stale square one jump out as soon as the shelf was
+    /// clicked, and stay subtle before.
+    func windowDidBecomeKey(_ notification: Notification) {
+        if panel.hasShadow { panel.invalidateShadow() }
     }
 
     func windowDidResignKey(_ notification: Notification) {
         // Renaming is the only thing that made it key, and clicking away is a
         // perfectly good way to finish.
         panel.wantsKey = false
+        if panel.hasShadow { panel.invalidateShadow() }
     }
 }

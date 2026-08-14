@@ -95,6 +95,13 @@ struct ShelfView: View {
             selectedIDs = []
         }
         .focusable()
+        // Focusable for ⌘A and Escape, but without the ring that comes with it.
+        // The ring is drawn around this view's *square* bounds, so once the
+        // shelf became key it traced a rectangle that only showed where it left
+        // the rounded corners — the hairline box at all four corners. The tinted
+        // `edge` is the shelf's focus indicator, and it already follows the
+        // corner radius.
+        .focusEffectDisabled()
     }
 
     // MARK: Chrome
