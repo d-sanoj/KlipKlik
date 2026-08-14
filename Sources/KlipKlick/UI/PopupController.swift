@@ -54,7 +54,10 @@ final class PopupController: NSObject, NSWindowDelegate {
             ),
             styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
             backing: .buffered,
-            defer: false
+            // Deferred: the popup is built at launch so it can open instantly,
+            // but there is no reason to allocate its backing store until it is
+            // first ordered on screen.
+            defer: true
         )
         super.init()
         configurePanel()

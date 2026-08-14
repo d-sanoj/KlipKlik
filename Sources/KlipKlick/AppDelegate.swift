@@ -13,7 +13,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var shelves: ShelfManager!
     private var fallbackHotKey: CarbonHotKey?
     private var statusItem: NSStatusItem!
-    private var preferences: PreferencesWindowController!
+    /// Built on first use. Constructing it eagerly cost a window, an
+    /// `NSHostingController` and the whole SwiftUI view graph at launch — for a
+    /// window most people open once, and many never open at all.
+    private var preferences: PreferencesWindowController?
     private var onboarding: OnboardingWindowController?
     private var cancellables = Set<AnyCancellable>()
 
@@ -36,9 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         monitor = ClipboardMonitor(store: store)
         purge = DailyPurge(store: store)
         popup = PopupController(store: store)
-        preferences = PreferencesWindowController(store: store)
 
-        popup.onOpenPreferences = { [weak self] in self?.preferences.show() }
+        popup.onOpenPreferences = { [weak self] in self?.showPreferences() }
         popup.onDidWriteToPasteboard = { [weak self] changeCount in
             self?.monitor.ignoreChangeCount(changeCount)
         }
@@ -492,7 +494,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func newShelf() { shelves.newShelf() }
 
-    @objc private func openPreferences() { preferences.show() }
+    @objc private func openPreferences() { showPreferences() }
+
+    private func showPreferences() {
+        if preferences == nil {
+            preferences = PreferencesWindowController(store: store)
+        }
+        preferences?.show()
+    }
 
     // MARK: Triggers
 
@@ -528,7 +537,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.preferences.show()
+            self?.showPreferences()
         }
         // Opens a shelf, and fills it with whatever paths the notification
         // carries. The shelf is a drag target, and a drag is the one gesture
