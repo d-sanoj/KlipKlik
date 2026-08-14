@@ -119,6 +119,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func showOnboarding(mode: OnboardingView.Mode) {
         let controller = OnboardingWindowController(mode: mode)
+        // Held only while it is on screen. Keeping it after the close kept its
+        // SwiftUI view graph — and everything that view had subscribed to —
+        // alive for the rest of the session.
+        controller.onClose = { [weak self] in self?.onboarding = nil }
         onboarding = controller
         controller.show()
     }

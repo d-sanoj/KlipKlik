@@ -24,8 +24,10 @@ struct OnboardingView: View {
     let onRestart: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
-    @State private var isTrusted = AccessibilityPermission.isTrusted
-    @State private var canRecordScreen = TextGrab.isPermitted
+    @ObservedObject private var permissions = PermissionStatus.shared
+
+    private var isTrusted: Bool { permissions.isTrusted }
+    private var canRecordScreen: Bool { permissions.canRecordScreen }
 
     /// What was granted when this window opened, so a grant made *while it is
     /// open* can be told apart from one that was already there.
@@ -121,11 +123,9 @@ struct OnboardingView: View {
                 fallbackMaterial: .windowBackground
             )
         )
-        // The status changes in System Settings, outside this window.
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            isTrusted = AccessibilityPermission.isTrusted
-            canRecordScreen = TextGrab.isPermitted
-        }
+        // The status changes in System Settings, outside this window — see
+        // `PermissionStatus`, which watches for the return trip. The window
+        // controller starts and stops it.
     }
 
     private var primaryButtonTitle: String {
@@ -209,10 +209,15 @@ struct OnboardingView: View {
 }
 
 /// Hosts `OnboardingView`, and remembers that it has been seen.
-final class OnboardingWindowController: NSWindowController {
+final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private static let seenKey = "didCompleteOnboarding"
 
     static var hasBeenSeen: Bool { UserDefaults.standard.bool(forKey: seenKey) }
+
+    /// Fired once the window is gone, so the owner can drop its reference.
+    /// Without it the controller — and the SwiftUI view graph under it — stays
+    /// alive for the life of the process.
+    var onClose: (() -> Void)?
 
     convenience init(mode: OnboardingView.Mode = .welcome) {
         // Placeholder root; the real one needs a reference to the controller.
@@ -234,6 +239,7 @@ final class OnboardingWindowController: NSWindowController {
         window.contentViewController = hosting
         window.setContentSize(hosting.view.fittingSize)
         window.center()
+        window.delegate = self
     }
 
     func show() {
@@ -243,12 +249,22 @@ final class OnboardingWindowController: NSWindowController {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+        PermissionStatus.shared.begin()
+    }
+
+    /// Both exits — the button and the close box — land here, so neither can
+    /// leave the watch running or the Dock icon behind.
+    func windowWillClose(_ notification: Notification) {
+        PermissionStatus.shared.end()
+        // Deferred, because dropping the policy while the close is still in
+        // flight leaves the Dock tile behind.
+        DispatchQueue.main.async { NSApp.setActivationPolicy(.accessory) }
+        onClose?()
     }
 
     private func finish() {
         UserDefaults.standard.set(true, forKey: Self.seenKey)
         window?.close()
-        DispatchQueue.main.async { NSApp.setActivationPolicy(.accessory) }
     }
 
     private func restart() {

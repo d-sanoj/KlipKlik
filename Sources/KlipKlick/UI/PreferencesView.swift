@@ -141,9 +141,11 @@ struct PreferencesView: View {
     @ObservedObject var store: HistoryStore
     @Environment(\.colorScheme) private var colorScheme
     @State private var tab: PrefsTab = .general
-    @State private var isTrusted = AccessibilityPermission.isTrusted
-    @State private var canRecordScreen = TextGrab.isPermitted
+    @ObservedObject private var permissions = PermissionStatus.shared
     @State private var storageTick = 0
+
+    private var isTrusted: Bool { permissions.isTrusted }
+    private var canRecordScreen: Bool { permissions.canRecordScreen }
 
     private var palette: Palette { .resolve(colorScheme) }
 
@@ -425,16 +427,9 @@ struct PreferencesView: View {
                 .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Polled rather than read once: these change outside the app, in System
-        // Settings, so a static read would show a stale status.
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            isTrusted = AccessibilityPermission.isTrusted
-            canRecordScreen = TextGrab.isPermitted
-        }
-        .onAppear {
-            isTrusted = AccessibilityPermission.isTrusted
-            canRecordScreen = TextGrab.isPermitted
-        }
+        // Watched rather than read once: these change outside the app, in
+        // System Settings, so a static read would show a stale status. See
+        // `PermissionStatus` — the window controller starts and stops it.
     }
 
     private var inPopupShortcuts: some View {
@@ -981,10 +976,19 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
     }
 
+    /// True between `show()` and `windowWillClose`, so an already-open window
+    /// re-shown from the menu doesn't start the watch twice.
+    private var isWatchingPermissions = false
+
     func show() {
         // The login item can be revoked in System Settings while the window is
         // closed, so re-read it rather than trusting what the switch last showed.
         Settings.shared.refreshLaunchAtLogin()
+
+        if !isWatchingPermissions {
+            isWatchingPermissions = true
+            PermissionStatus.shared.begin()
+        }
 
         // Dock icon first: activating before the policy change leaves the app
         // frontmost with no icon, and the window can end up behind again.
@@ -994,6 +998,11 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        if isWatchingPermissions {
+            isWatchingPermissions = false
+            PermissionStatus.shared.end()
+        }
+
         // Back to menu-bar-only. Deferred, because dropping the policy while
         // the close is still in flight leaves the Dock tile behind.
         DispatchQueue.main.async {
