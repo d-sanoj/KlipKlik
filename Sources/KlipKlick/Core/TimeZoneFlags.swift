@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// The flag emoji for a time zone's country.
@@ -16,7 +17,10 @@ final class TimeZoneFlags {
     private var cache: [String: String] = [:]
     /// zone.tab's canonical zone → ISO 3166 country code.
     private lazy var countryByZone: [String: String] = loadZoneTab()
-    /// Zone files grouped by their contents, built only if an alias needs it.
+    /// Zone files grouped by a digest of their contents, built only if an alias
+    /// needs it. Keyed by the hash rather than the bytes: the bytes were the
+    /// dictionary key, which meant holding every canonical zone file in memory
+    /// for the life of the process to compare against.
     private lazy var zonesByContent: [Data: [String]] = groupZonesByContent()
 
     private init() {
@@ -37,7 +41,7 @@ final class TimeZoneFlags {
         // An alias: its file is a byte-for-byte copy of the zone it points at,
         // so the country comes from whichever canonical zones share those bytes.
         guard let root, let data = FileManager.default.contents(atPath: "\(root)/\(identifier)"),
-              let group = zonesByContent[data]
+              let group = zonesByContent[Self.digest(data)]
         else { return nil }
 
         // Several countries can share one rule set — Oslo, Stockholm and Berlin
@@ -73,9 +77,15 @@ final class TimeZoneFlags {
             guard countryByZone[path] != nil,
                   let data = FileManager.default.contents(atPath: "\(root)/\(path)")
             else { continue }
-            groups[data, default: []].append(path)
+            groups[Self.digest(data), default: []].append(path)
         }
         return groups
+    }
+
+    /// 32 bytes per zone instead of the whole file. Aliases are byte-for-byte
+    /// copies, so a digest identifies them exactly as well as the contents did.
+    private static func digest(_ data: Data) -> Data {
+        Data(SHA256.hash(data: data))
     }
 
     /// "IN" → 🇮🇳, by offsetting each letter into the regional indicators.
