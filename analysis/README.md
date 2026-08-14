@@ -30,6 +30,7 @@ If you only read two files, read [05-permissions.md](05-permissions.md) and
 | [11-what-i-got-wrong.md](11-what-i-got-wrong.md) | The mistakes, including two that shipped |
 | [12-drag-shelf.md](12-drag-shelf.md) | Drag shelves, and detecting a drag with no permissions |
 | [13-shelf-island-copy-move.md](13-shelf-island-copy-move.md) | Notch island, Copy vs Move, selection, and the hit-testing mess |
+| [14-performance.md](14-performance.md) | Nine things the idle app was doing that it did not need to |
 
 ## The short version
 
@@ -53,6 +54,14 @@ output, and no other offline OCR engine knows these glyphs either.
 per-symbol breakdown said `⇧` and `⌥` were weak, which sent me tuning shapes.
 Splitting the same data by *font* showed system text was already at 100% and
 every single loss was monospaced. Different problem entirely.
+
+**An idle app is where the waste hides, and it is invisible without a sampler.**
+KlipKlick sat at 0.9% CPU looking fine while it woke `tccd` 86,400 times a day
+from a timer whose window had been closed for hours, and asked LaunchServices who
+was frontmost 2.5 times a second. Neither is visible in Activity Monitor: the
+first is *blocked* time, not CPU. Idle CPU is now 0.05%, memory 32 MB → 20 MB.
+The measurements, and the four claims I made that turned out to be wrong, are in
+[14-performance.md](14-performance.md).
 
 **A drop destination that returns `.move` is how Finder deletes the original.**
 The shelf's Move half always returns `.copy` on intake and only completes the
