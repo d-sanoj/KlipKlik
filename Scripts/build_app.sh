@@ -13,14 +13,32 @@ APP="$ROOT/build/KlipKlick.app"
 cd "$ROOT"
 
 echo "==> Building ($CONFIGURATION)"
-swift build -c "$CONFIGURATION"
-BINARY="$(swift build -c "$CONFIGURATION" --show-bin-path)/KlipKlick"
+
+# -Osize on release only. Measured on this app: it saves little on its own, but
+# once local symbols are stripped it is worth a further 11% — 1.22 MB to 1.08 MB
+# — and smaller text means fewer pages faulted in. Debug builds stay at -Onone
+# so the debugger keeps its footing.
+SWIFT_FLAGS=()
+if [ "$CONFIGURATION" = "release" ]; then
+    SWIFT_FLAGS=(-Xswiftc -Osize)
+fi
+
+swift build -c "$CONFIGURATION" "${SWIFT_FLAGS[@]}"
+BINARY="$(swift build -c "$CONFIGURATION" "${SWIFT_FLAGS[@]}" --show-bin-path)/KlipKlick"
 
 echo "==> Assembling bundle"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/KlipKlick"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+
+# Local symbols are more than half the binary — 2.63 MB down to 1.22 MB here —
+# and nothing at runtime reads them. Necessarily before codesign: stripping
+# afterwards rewrites the file and invalidates the signature macOS hangs the
+# privacy grants on.
+if [ "$CONFIGURATION" = "release" ]; then
+    strip -x "$APP/Contents/MacOS/KlipKlick"
+fi
 
 # Rebuild the .icns whenever the artwork is newer, so the icon is never stale
 # and the generated file does not need committing.
