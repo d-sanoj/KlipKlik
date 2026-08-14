@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import UniformTypeIdentifiers
 
 /// The item families KlipKlick tells apart. Rows are text-only, so this only
@@ -357,13 +358,40 @@ extension ClipboardItem {
             return "file:" + fileURLs.map(\.absoluteString).joined(separator: "|")
         }
         if let plain, !plain.isEmpty {
-            return "text:\(plain.hashValue)"
+            return "text:" + digest(Data(plain.utf8))
         }
-        let bytes = representations
-            .flatMap(\.values)
-            .max(by: { $0.count < $1.count })?
-            .hashValue ?? 0
-        return "data:\(bytes)"
+        guard let bytes = representations.flatMap(\.values).max(by: { $0.count < $1.count })
+        else { return "data:empty" }
+        return "data:" + digest(bytes)
+    }
+
+    /// Above this, the digest samples rather than reads everything.
+    private static let wholeHashLimit = 1 << 20
+    private static let sampleBytes = 1 << 16
+
+    /// A fingerprint that means the same thing in the next launch as in this one.
+    ///
+    /// This used `hashValue`, which Swift seeds randomly per process. Pinned
+    /// items persist their fingerprint in the index, so after a restart a pinned
+    /// item's stored fingerprint no longer matched its own content: re-copying it
+    /// failed to collapse onto the existing row and added a duplicate instead.
+    private static func digest(_ data: Data) -> String {
+        var hasher = SHA256()
+        var count = data.count
+        withUnsafeBytes(of: &count) { hasher.update(bufferPointer: $0) }
+
+        if data.count <= wholeHashLimit {
+            hasher.update(data: data)
+        } else {
+            // Hashing every byte of a 23 MB image costs 8 ms on the capture path
+            // to no end. Length plus both ends separates any two things a person
+            // actually copies, and the worst a collision could do is treat a new
+            // copy as a repeat of the row above it.
+            hasher.update(data: data.prefix(sampleBytes))
+            hasher.update(data: data.suffix(sampleBytes))
+        }
+
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 }
 
