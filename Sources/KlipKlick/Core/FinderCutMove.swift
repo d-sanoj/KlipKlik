@@ -40,6 +40,11 @@ final class FinderCutMove {
     /// Pasteboard generation at the moment cut mode was armed. If it has moved
     /// on, something else was copied and the pending move is stale.
     private var armedChangeCount: Int?
+    /// Frontmost bundle identifier, kept current by the activation
+    /// notification. Cached rather than queried: reading `bundleIdentifier` off
+    /// `NSWorkspace.frontmostApplication` is a synchronous LaunchServices round
+    /// trip, and this is consulted on every ⌘ C, ⌘ X and ⌘ V.
+    private var frontmostBundleID: String?
 
     func start() {
         stop()
@@ -51,12 +56,15 @@ final class FinderCutMove {
 
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
-            selector: #selector(appActivated),
+            selector: #selector(appActivated(_:)),
             name: NSWorkspace.didActivateApplicationNotification,
             object: nil
         )
 
-        // Finder may already be frontmost at launch.
+        // Finder may already be frontmost at launch. The one query that has to
+        // go out to LaunchServices; every later answer comes from the
+        // notification.
+        frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         updateHotKeys()
     }
 
@@ -72,7 +80,11 @@ final class FinderCutMove {
 
     // MARK: Hot keys
 
-    @objc private func appActivated() {
+    @objc private func appActivated(_ note: Notification) {
+        // The notification already carries the app that just came forward, so
+        // there is nothing to ask NSWorkspace for.
+        let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+        frontmostBundleID = app?.bundleIdentifier
         updateHotKeys()
     }
 
@@ -83,7 +95,7 @@ final class FinderCutMove {
     }
 
     private func updateHotKeys() {
-        let active = Settings.shared.finderCutMove && Self.isFinderFrontmost
+        let active = Settings.shared.finderCutMove && isFinderFrontmost
 
         if active {
             if cutHotKey == nil {
@@ -167,7 +179,7 @@ final class FinderCutMove {
     }
 
     private func handleCopyKey(_ event: NSEvent) {
-        guard Settings.shared.finderCutMove, Self.isFinderFrontmost else { return }
+        guard Settings.shared.finderCutMove, isFinderFrontmost else { return }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let isPlainCommand = flags.subtracting(.command).isEmpty && flags.contains(.command)
         // A plain copy replaces any pending move.
@@ -180,7 +192,7 @@ final class FinderCutMove {
 
     private func performPaste() {
         let stale = armedChangeCount != NSPasteboard.general.changeCount
-        let shouldMove = isArmed && !stale && Self.isFinderFrontmost
+        let shouldMove = isArmed && !stale && isFinderFrontmost
         Self.log("⌘V intercepted armed=\(isArmed) stale=\(stale) move=\(shouldMove)")
 
         disarm()
@@ -195,8 +207,8 @@ final class FinderCutMove {
 
     // MARK: Helpers
 
-    private static var isFinderFrontmost: Bool {
-        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == finderBundleID
+    private var isFinderFrontmost: Bool {
+        frontmostBundleID == Self.finderBundleID
     }
 
     /// How many file URLs the pasteboard currently holds.
