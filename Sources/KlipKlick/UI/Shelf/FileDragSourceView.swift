@@ -51,6 +51,11 @@ final class FileDragSourceView: NSView, NSDraggingSource {
         needsDisplay = true
         onHover?(value)
     }
+
+    /// See `ShelfCanvasView.acceptsFirstMouse(for:)` — the canvas hit-tests
+    /// ahead of this view today, but a drag source that refuses the first click
+    /// is the bug waiting to come back if that ever changes.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     /// Below this the gesture is a click, not a drag. Matches the system's own
     /// slop, so a shaky click on a trackpad does not fling a file somewhere.
     private static let dragThreshold: CGFloat = 4
@@ -271,6 +276,12 @@ final class WindowDragHandleView: NSView {
     var onDoubleClick: (() -> Void)?
     var menuBuilder: (() -> NSMenu?)?
 
+    /// Move the shelf on the first press, for the same reason its files drag on
+    /// the first press — see `ShelfCanvasView.acceptsFirstMouse(for:)`. A shelf
+    /// you have to wake before you can move it is the same extra click in a
+    /// different place.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func mouseDown(with event: NSEvent) {
         if event.clickCount >= 2 {
             onDoubleClick?()
@@ -378,6 +389,18 @@ final class ShelfCanvasView: NSView {
         guard bounds.contains(local) else { return nil }
         return self
     }
+
+    /// Drag a file straight out of a shelf that is not the key window.
+    ///
+    /// Without this, AppKit swallows the first click of an inactive window to
+    /// make it key and never delivers it — so picking a file off a shelf after
+    /// working in Finder took a click to wake the shelf and *then* a drag. The
+    /// shelf is a floating panel you reach across to, and needing to knock
+    /// before opening the door is the whole cost.
+    ///
+    /// `mouseDown` still makes the window key, so nothing else changes; the
+    /// click is simply also handed to the view that was under it.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func updateTrackingAreas() {
         trackingAreas.forEach(removeTrackingArea)

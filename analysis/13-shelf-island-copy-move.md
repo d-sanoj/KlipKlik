@@ -242,6 +242,44 @@ went to the representable wrapper rather than the button. The badge is now
 drawn in `FileDragSourceView.draw`, hover is driven by the canvas's tracking
 area, and a click in the top-right 24pt calls `onRemove` directly.
 
+## The click you should not have to make
+
+Reported after living with it: with a shelf full of files, clicking a folder in
+Finder and then reaching back to drag a file *out* took two gestures. A click to
+wake the shelf, then the drag. Every time.
+
+The instinct is to read that as a focus problem — the shelf went inactive, so
+make it active again, perhaps on hover. That is the wrong layer. AppKit
+**swallows the first click on a non-key window** to make it key, and does not
+deliver it to the view underneath, unless that view says otherwise:
+
+```swift
+override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+```
+
+Three views need it, and which three follows from the hit-testing above:
+`ShelfCanvasView`, because its `hitTest` claims every point in the shelf and it
+is therefore the view AppKit actually asks; `FileDragSourceView`, which is where
+the drag session begins; and `WindowDragHandleView`, so moving the shelf costs
+the same one gesture as dragging out of it.
+
+**Hover-to-activate would have been the wrong fix.** A shelf floats above
+everything and joins all spaces, so activating on hover means the pointer merely
+*crossing* it steals keyboard focus from whatever is being typed in. It trades a
+spare click for a much worse interruption. `acceptsFirstMouse` changes nothing
+else: `mouseDown` still makes the window key, the click simply is not eaten on
+the way in.
+
+This is the same lesson as the `hitTest` returning `nil` above — when a click
+goes missing on this window, the question is which view AppKit asked, not which
+view drew the pixel.
+
+**Noticed while testing, not yet fixed:** a shelf restored from
+`shelves-index` can come back off-screen — one landed at y=1017 on a 982pt
+display and was unreachable. `place()` clamps through `keepOnScreen()`, but a
+restored position appears not to be re-clamped against the *current* display
+arrangement. Unplugging an external monitor should reproduce it.
+
 ## Sizing and the hover bounce
 
 The grid was hard-coded to three rows:
@@ -298,6 +336,7 @@ discards staged bytes only.
 | Insert action bar on hover | Window resized; looked like bounce |
 | Overlay action bar on the grid | AppKit views stole the clicks |
 | Leave an empty shelf after × | A box with nothing in it |
+| Activate the shelf on hover | Steals keyboard focus by pointing at it |
 
 ## What I would still change
 
