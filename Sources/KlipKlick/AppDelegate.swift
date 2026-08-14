@@ -25,8 +25,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// doesn't relayout the menu bar.
     private var lastClockTitle: String?
     private var cutPending = false
-    /// Every zone menu item by identifier, for moving the checkmark.
-    private var timeZoneItems: [String: NSMenuItem] = [:]
+    /// Delegates for the lazily-built timezone submenus. `NSMenu.delegate` is a
+    /// weak reference, so these have to be held somewhere.
+    private var lazyMenus: [LazyMenu] = []
+    /// The "System default" row, the one zone item that lives above the regions.
+    private var systemZoneItem: NSMenuItem?
     private var timeZoneMenuItem: NSMenuItem!
     private var stripFormattingItem: NSMenuItem!
     private var newShelfItem: NSMenuItem!
@@ -274,9 +277,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     ///
     /// The top of the menu names the zone in force, so the current setting is
     /// readable without hunting through submenus for the checkmark.
+    /// Built on first open, not at launch. Populating this eagerly meant walking
+    /// the whole zoneinfo tree and allocating ~600 `NSMenuItem`s before the app
+    /// had shown anything, then keeping every one of them for the session.
     private func buildTimeZoneMenu() -> NSMenu {
         let menu = NSMenu()
+        let lazyMenu = LazyMenu(
+            build: { [weak self] menu in self?.populateTimeZoneMenu(menu) },
+            refresh: { [weak self] menu in self?.refreshTimeZoneRoot(menu) }
+        )
+        menu.delegate = lazyMenu
+        lazyMenus.append(lazyMenu)
+        return menu
+    }
 
+    /// The regions, and the two rows above them. One item per region — the zones
+    /// inside are left to `regionMenu`, which builds them when that region is
+    /// actually opened.
+    private func populateTimeZoneMenu(_ menu: NSMenu) {
         selectedZoneHeader = menu.addItem(withTitle: "", action: nil, keyEquivalent: "")
         selectedZoneHeader.isEnabled = false
 
@@ -289,7 +307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
         system.target = self
         system.representedObject = ""
-        timeZoneItems[""] = system
+        systemZoneItem = system
 
         menu.addItem(.separator())
 
@@ -304,22 +322,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for region in byRegion.keys.sorted() {
             let regionItem = menu.addItem(withTitle: region, action: nil, keyEquivalent: "")
             let identifiers = byRegion[region]!.sorted { label(for: $0) < label(for: $1) }
-            regionItem.submenu = regionMenu(identifiers, region: region)
-        }
 
-        refreshTimeZoneMenu()
-        return menu
+            let submenu = NSMenu()
+            let lazyMenu = LazyMenu(
+                build: { [weak self] menu in
+                    self?.populateRegionMenu(menu, identifiers: identifiers, region: region)
+                },
+                refresh: { [weak self] menu in self?.refreshZoneItems(in: menu) }
+            )
+            submenu.delegate = lazyMenu
+            lazyMenus.append(lazyMenu)
+            regionItem.submenu = submenu
+        }
     }
 
     /// A region's zones, split into alphabetical runs once the list grows past
     /// what fits on screen — a 100-entry scrolling menu is unusable, and Asia
     /// alone is well past that.
-    private func regionMenu(_ identifiers: [String], region: String) -> NSMenu {
-        let menu = NSMenu()
-
+    private func populateRegionMenu(_ menu: NSMenu, identifiers: [String], region: String) {
         guard identifiers.count > Self.chunkThreshold else {
             for identifier in identifiers { menu.addItem(zoneItem(identifier, region: region)) }
-            return menu
+            return
         }
 
         // Groups break on a change of initial letter, never mid-letter: a
@@ -362,8 +385,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             for identifier in group { submenu.addItem(zoneItem(identifier, region: region)) }
             item.submenu = submenu
         }
-
-        return menu
     }
 
     private func initial(of identifier: String, region: String) -> String {
@@ -380,7 +401,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
         item.target = self
         item.representedObject = identifier
-        timeZoneItems[identifier] = item
         return item
     }
 
@@ -434,28 +454,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return names.sorted()
     }
 
-    /// Moves the checkmark and refreshes the offsets, which shift with DST.
+    /// The one line the status menu itself shows. Cheap enough to run every time
+    /// that menu opens, which is the point: the ~600 zone rows are no longer
+    /// touched here, only when the region holding them is opened.
     private func refreshTimeZoneMenu() {
-        let selected = Settings.shared.menuBarTimeZone
+        let zone = Settings.shared.resolvedTimeZone
+        timeZoneMenuItem?.title = "Timezone: \(TimeZoneFlags.shared.flag(for: zone.identifier)) "
+            + "\(label(for: zone.identifier))"
+    }
 
+    /// The two rows above the regions, refreshed when the timezone submenu opens.
+    private func refreshTimeZoneRoot(_ menu: NSMenu) {
+        let flags = TimeZoneFlags.shared
+        let selected = Settings.shared.menuBarTimeZone
+        let zone = Settings.shared.resolvedTimeZone
+        let following = selected.isEmpty ? " (system)" : ""
+
+        selectedZoneHeader?.title = "\(flags.flag(for: zone.identifier))  "
+            + "\(label(for: zone.identifier)) — \(Self.offsetLabel(zone))\(following)"
+        systemZoneItem?.title = "\(flags.flag(for: TimeZone.current.identifier))  "
+            + "System default — \(label(for: TimeZone.current.identifier))"
+        systemZoneItem?.state = selected.isEmpty ? .on : .off
+    }
+
+    /// Checkmark and offset for the zones in one opened region. Offsets shift
+    /// with DST, so they are written on open rather than only at build.
+    private func refreshZoneItems(in menu: NSMenu) {
+        let selected = Settings.shared.menuBarTimeZone
         let flags = TimeZoneFlags.shared
 
-        for (identifier, item) in timeZoneItems {
+        for item in menu.items {
+            // Chunked regions ("A – F") hold their zones a level down. Those
+            // submenus have no delegate, so they are refreshed from here.
+            if let submenu = item.submenu {
+                refreshZoneItems(in: submenu)
+                continue
+            }
+            guard let identifier = item.representedObject as? String,
+                  !identifier.isEmpty,
+                  let zone = TimeZone(identifier: identifier)
+            else { continue }
+
             item.state = identifier == selected ? .on : .off
-            guard !identifier.isEmpty, let zone = TimeZone(identifier: identifier) else { continue }
             let region = identifier.split(separator: "/").first.map(String.init)
             item.title = "\(flags.flag(for: identifier))  "
                 + "\(label(for: identifier, region: region)) — \(Self.offsetLabel(zone))"
         }
-
-        let zone = Settings.shared.resolvedTimeZone
-        let name = label(for: zone.identifier)
-        let flag = flags.flag(for: zone.identifier)
-        let following = selected.isEmpty ? " (system)" : ""
-        selectedZoneHeader?.title = "\(flag)  \(name) — \(Self.offsetLabel(zone))\(following)"
-        timeZoneItems[""]?.title = "\(flags.flag(for: TimeZone.current.identifier))  "
-            + "System default — \(label(for: TimeZone.current.identifier))"
-        timeZoneMenuItem?.title = "Timezone: \(flag) \(name)"
     }
 
     private static func offsetLabel(_ zone: TimeZone) -> String {
