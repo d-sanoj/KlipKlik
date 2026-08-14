@@ -19,10 +19,25 @@ final class HistoryStore: ObservableObject {
     private let disk = DiskStore.shared
     private var offloadTimer: Timer?
 
+    /// Items whose write is in flight, so a later sweep does not start a second
+    /// one for the same item.
+    private var offloading: Set<UUID> = []
+
     init() {
         // Pinned items come back as metadata only; their bytes stay on disk
         // until something actually needs them.
         items = disk.loadPinned()
+    }
+
+    /// Runs only while something is actually waiting to be written.
+    ///
+    /// This used to tick every 60 seconds for the life of the process, almost
+    /// always finding nothing: history is emptied on quit and at the purge, so
+    /// the common state is an app with no bytes left to offload at all.
+    private func startOffloadTimerIfNeeded() {
+        guard offloadTimer == nil,
+              items.contains(where: { $0.representations != nil })
+        else { return }
 
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             self?.offloadIdleItems()
@@ -31,16 +46,38 @@ final class HistoryStore: ObservableObject {
         offloadTimer = timer
     }
 
+    private func stopOffloadTimerIfIdle() {
+        guard offloading.isEmpty,
+              !items.contains(where: { $0.representations != nil })
+        else { return }
+        offloadTimer?.invalidate()
+        offloadTimer = nil
+    }
+
     /// Writes out anything that has been sitting in memory long enough, and frees
     /// the bytes. Only ever drops what the disk confirms it has.
     private func offloadIdleItems() {
         let cutoff = Date().addingTimeInterval(-Self.offloadDelay)
-        for index in items.indices where items[index].representations != nil {
-            guard items[index].createdAt < cutoff else { continue }
-            if disk.offload(items[index]) {
+
+        for item in items where item.representations != nil {
+            guard item.createdAt < cutoff, !offloading.contains(item.id) else { continue }
+            offloading.insert(item.id)
+
+            // Encrypting and writing megabytes has no business on the thread
+            // that draws the popup; the bytes are dropped once the disk confirms
+            // it has them, exactly as before.
+            disk.offload(item) { [weak self] written in
+                guard let self else { return }
+                offloading.remove(item.id)
+                defer { stopOffloadTimerIfIdle() }
+
+                guard written, let index = items.firstIndex(where: { $0.id == item.id })
+                else { return }
                 items[index].representations = nil
             }
         }
+
+        stopOffloadTimerIfIdle()
     }
 
     /// Brings an item's bytes back, if they were offloaded. Called just before a
@@ -67,6 +104,7 @@ final class HistoryStore: ObservableObject {
         items.insert(item, at: 0)
         applyLimit()
         compactImageBytes(of: item)
+        startOffloadTimerIfNeeded()
     }
 
     /// Shrinks an item's image bytes just after capture.

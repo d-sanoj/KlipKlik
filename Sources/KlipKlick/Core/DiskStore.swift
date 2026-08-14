@@ -108,6 +108,30 @@ final class DiskStore {
         }
     }
 
+    /// The same write, off the main thread, reporting back on it.
+    ///
+    /// Encrypting and writing a multi-megabyte blob is housekeeping — it has no
+    /// business running on the thread that draws the popup. The queue was already
+    /// here and unused.
+    func offload(_ item: ClipboardItem, completion: @escaping (Bool) -> Void) {
+        guard let representations = item.representations else {
+            completion(true)
+            return
+        }
+        let url = blobURL(item.id, pinned: item.pinned)
+        queue.async {
+            var ok = false
+            do {
+                let sealed = try SecretBox.seal(try Self.encode(representations))
+                try sealed.write(to: url, options: .atomic)
+                ok = true
+            } catch {
+                ok = false
+            }
+            DispatchQueue.main.async { completion(ok) }
+        }
+    }
+
     /// Reads representations back. Checks both tiers, since pinning moves a file.
     func materialize(_ item: ClipboardItem) -> [[String: Data]]? {
         for pinned in [item.pinned, !item.pinned] {
