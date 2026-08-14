@@ -4,15 +4,20 @@ import AppKit
 ///
 /// macOS has no change notification for the pasteboard, so the only route is to
 /// poll `changeCount`, which is cheap — it is a counter read, not a data read.
+///
+/// Nothing else runs on the tick. Who is frontmost used to be read here too,
+/// which quietly made each tick a synchronous LaunchServices round trip;
+/// `FrontmostWatcher` now tracks that by notification instead.
 final class ClipboardMonitor {
     private let store: HistoryStore
+    private let frontmost = FrontmostWatcher()
     private var timer: Timer?
+    /// Kept so the ignore-list lookback can be bounded to one tick.
+    private var interval: TimeInterval = 0.4
     private var lastChangeCount: Int
     /// Change counts produced by our own writes, so restoring an item doesn't
     /// bounce straight back into the history as a "new" copy.
     private var selfWrittenChangeCounts: Set<Int> = []
-    /// Frontmost app as of the previous tick, for the ignore-list lookback.
-    private var previousFrontmost: FrontmostApp?
 
     init(store: HistoryStore) {
         self.store = store
@@ -21,6 +26,8 @@ final class ClipboardMonitor {
 
     func start(interval: TimeInterval = 0.4) {
         timer?.invalidate()
+        self.interval = interval
+        frontmost.start()
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             self?.poll()
         }
@@ -32,6 +39,7 @@ final class ClipboardMonitor {
     func stop() {
         timer?.invalidate()
         timer = nil
+        frontmost.stop()
     }
 
     /// Tells the monitor that `changeCount` came from KlipKlick itself.
@@ -41,48 +49,28 @@ final class ClipboardMonitor {
     }
 
     private func poll() {
+        // The whole tick, on the overwhelmingly common path: read a counter,
+        // compare it, return. Everything below runs only on an actual copy.
         let pasteboard = NSPasteboard.general
-        let frontmost = Self.frontmostApp()
-        // Remembered even on ticks with no change, so the next change can look
-        // back one interval.
-        defer { previousFrontmost = frontmost }
-
         let current = pasteboard.changeCount
         guard current != lastChangeCount else { return }
         lastChangeCount = current
 
         if selfWrittenChangeCounts.remove(current) != nil { return }
 
-        // Ignored apps. The frontmost app is read up to `interval` after the
-        // ⌘C, so someone who copies and immediately switches away would
-        // otherwise have the copy credited — and recorded — against the app
-        // they switched *to*. Checking the previous tick as well means a fast
-        // switch drops the item rather than storing it, which is the safe way
-        // to be wrong about a password manager.
-        let recent = [frontmost, previousFrontmost].compactMap(\.self)
+        // Ignored apps, checked against both the app in front and the one just
+        // switched away from — see `FrontmostWatcher.recent(within:)`.
+        let recent = frontmost.recent(within: interval)
         if recent.contains(where: { Settings.shared.isIgnored($0.bundleID) }) { return }
 
-        guard let item = ClipboardItem.capture(from: pasteboard, sourceApp: frontmost?.name)
+        guard let item = ClipboardItem.capture(from: pasteboard, sourceApp: frontmost.current?.name)
         else { return }
         if ProcessInfo.processInfo.environment["KLIPKLICK_DEBUG"] != nil {
-            FileHandle.standardError.write(
-                "capture #\(current) kind=\(item.kind) title=\(item.title) fp=\(item.fingerprint)\n"
-                    .data(using: .utf8)!
-            )
+            let line = "capture #\(current) kind=\(item.kind) title=\(item.title)"
+                + " fp=\(item.fingerprint) from=\(item.sourceApp ?? "—")"
+                + " recent=\(recent.map { $0.bundleID ?? "—" })\n"
+            FileHandle.standardError.write(line.data(using: .utf8)!)
         }
         store.insert(item)
-    }
-
-    struct FrontmostApp {
-        let name: String?
-        let bundleID: String?
-    }
-
-    /// Who to credit the copy to, and who to check against the ignore list.
-    private static func frontmostApp() -> FrontmostApp? {
-        guard let app = NSWorkspace.shared.frontmostApplication,
-              app.processIdentifier != ProcessInfo.processInfo.processIdentifier
-        else { return nil }
-        return FrontmostApp(name: app.localizedName, bundleID: app.bundleIdentifier)
     }
 }
