@@ -41,12 +41,23 @@ final class DragWatcher {
     /// The mouse button came up, whatever happened in between.
     var onDragEnded: (() -> Void)?
 
-    /// 25 Hz. Fast enough that the pad is up before the pointer has travelled
-    /// far, slow enough to be free — the per-tick cost is one `CGEvent` state
-    /// read, and the pasteboard is only touched when that read says to.
-    private static let interval: TimeInterval = 0.04
+    /// 25 Hz while a button is down: the pad has to be up before the pointer has
+    /// travelled far, and this is the window where latency is visible.
+    private static let activeInterval: TimeInterval = 0.04
+    /// 5 Hz the rest of the time — which is nearly all of the time.
+    ///
+    /// A drag always starts with a mouse-down, and a global monitor sees that
+    /// for free and with no permission, so the fast poll can be started on
+    /// demand instead of running all day. The slow timer stays as a backstop
+    /// rather than being removed: global monitors never observe our own app's
+    /// events, and a button-down that arrives some other way would otherwise
+    /// take the shelf with it. Five idle wakeups a second instead of
+    /// twenty-five, with nothing given up.
+    private static let idleInterval: TimeInterval = 0.2
 
     private var timer: Timer?
+    private var isPollingFast = false
+    private var downMonitor: Any?
     private var wasButtonDown = false
     private var baselineChangeCount = 0
     private var sessionReported = false
@@ -58,20 +69,47 @@ final class DragWatcher {
 
     func start() {
         stop()
-        let timer = Timer(timeInterval: Self.interval, repeats: true) { [weak self] _ in
+
+        // Mouse events need no Accessibility grant, unlike a CGEventTap. This
+        // only has to fire once, at the top of the gesture: everything after is
+        // the timer's job, because the source application's modal drag loop
+        // swallows the events a global monitor would otherwise see — including
+        // the mouse-up.
+        downMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+            guard let self else { return }
+            schedule(fast: true)
+            // Do not wait a whole tick to act on the button that just went down.
+            poll()
+        }
+
+        schedule(fast: false)
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        if let downMonitor { NSEvent.removeMonitor(downMonitor) }
+        downMonitor = nil
+        isPollingFast = false
+        wasButtonDown = false
+        sessionReported = false
+    }
+
+    private func schedule(fast: Bool) {
+        guard fast != isPollingFast || timer == nil else { return }
+        isPollingFast = fast
+        timer?.invalidate()
+
+        let timer = Timer(
+            timeInterval: fast ? Self.activeInterval : Self.idleInterval,
+            repeats: true
+        ) { [weak self] _ in
             self?.poll()
         }
         // .common, or polling stops the moment any menu or tracking loop opens —
         // which includes the drag loop this exists to observe.
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
-    }
-
-    func stop() {
-        timer?.invalidate()
-        timer = nil
-        wasButtonDown = false
-        sessionReported = false
     }
 
     deinit { stop() }
@@ -91,12 +129,18 @@ final class DragWatcher {
             // count is unambiguously this drag and not the last one's residue.
             baselineChangeCount = NSPasteboard(name: .drag).changeCount
             sessionReported = false
+            // A button seen by the slow timer rather than the monitor still has
+            // to be followed at full rate.
+            schedule(fast: true)
         }
 
         if !isDown, wasButtonDown {
             if sessionReported { onDragEnded?() }
             sessionReported = false
         }
+
+        // Nothing is held, so there is nothing to watch closely for.
+        if !isDown, isPollingFast { schedule(fast: false) }
 
         wasButtonDown = isDown
         // Once reported there is nothing left to watch for until the button
