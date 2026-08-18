@@ -63,7 +63,7 @@ permissions mattered so much.
 
 macOS has no notification when the pasteboard changes. The only route is polling
 `NSPasteboard.general.changeCount`, which is a counter read rather than a data
-read, so it is cheap. KlipKlick polls at 0.4 s.
+read, so it is cheap. KlipKlik polls at 0.4 s.
 
 ```mermaid
 sequenceDiagram
@@ -239,7 +239,7 @@ check, which sees that 05:00 has passed, and clears before you see anything.
 ## Source layout
 
 ```
-Sources/KlipKlick/
+Sources/KlipKlik/
   main.swift                    NSApplication entry, .accessory policy
   AppDelegate.swift             Status item, clock, triggers, lifecycle
   Models/

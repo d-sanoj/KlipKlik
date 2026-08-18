@@ -4,7 +4,7 @@
 // runs — not a copy of it:
 //
 //   swiftc -O -o /tmp/rt analysis/code/image-roundtrip.swift \
-//       Sources/KlipKlick/Models/ClipboardItem.swift
+//       Sources/KlipKlik/Models/ClipboardItem.swift
 //   /tmp/rt <some.png>
 //
 // The claim under test: storing PNG in place of the pasteboard's uncompressed
@@ -38,7 +38,7 @@ let item = ClipboardItem(
 )
 
 // A named pasteboard, so running this never disturbs the real clipboard.
-let pasteboard = NSPasteboard(name: NSPasteboard.Name("com.sanoj.KlipKlick.roundtrip"))
+let pasteboard = NSPasteboard(name: NSPasteboard.Name("com.sanoj.KlipKlik.roundtrip"))
 item.write(to: pasteboard)
 
 guard let pasted = pasteboard.pasteboardItems?.first else {

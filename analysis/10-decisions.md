@@ -86,7 +86,7 @@ and the polling cost is a counter read.
    previously seen *with* windows. That rules out transient zeroes while a
    document is swapped, and apps that were already windowless.
 
-Finder, Dock, Control Center, Notification Center, KlipKlick itself and all
+Finder, Dock, Control Center, Notification Center, KlipKlik itself and all
 menu-bar-only apps are exempt. Quitting is graceful, so apps still prompt about
 unsaved work.
 
@@ -140,7 +140,7 @@ illegible.
 
 ## D9 · Permissions get a window, not the system alert
 
-**Chosen:** KlipKlick's own window with live status, one Allow button per
+**Chosen:** KlipKlik's own window with live status, one Allow button per
 permission, Reset, and Restart.
 
 **Why:** the bare `AXIsProcessTrustedWithOptions` alert has no icon, no account of

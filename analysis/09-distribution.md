@@ -7,10 +7,10 @@ bundle, sign:
 
 ```bash
 swift build -c release
-BINARY="$(swift build -c release --show-bin-path)/KlipKlick"
+BINARY="$(swift build -c release --show-bin-path)/KlipKlik"
 
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BINARY" "$APP/Contents/MacOS/KlipKlick"
+cp "$BINARY" "$APP/Contents/MacOS/KlipKlik"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
@@ -25,9 +25,9 @@ codesign --force --sign - "$APP"
 and makes a compressed image:
 
 ```bash
-cp -R "$APP" "$STAGING/KlipKlick.app"
+cp -R "$APP" "$STAGING/KlipKlik.app"
 ln -s /Applications "$STAGING/Applications"
-hdiutil create -volname "KlipKlick $VERSION" -srcfolder "$STAGING" \
+hdiutil create -volname "KlipKlik $VERSION" -srcfolder "$STAGING" \
     -fs HFS+ -format UDZO -ov "$DMG"
 ```
 
@@ -35,13 +35,13 @@ Around 1.4 MB. Verified by mounting it and checking the contents rather than
 assuming:
 
 ```
-$ hdiutil attach build/KlipKlick-1.0.4.dmg
-/Volumes/KlipKlick 1.0.4
+$ hdiutil attach build/KlipKlik-1.0.4.dmg
+/Volumes/KlipKlik 1.0.4
 
 Applications -> /Applications
-KlipKlick.app
+KlipKlik.app
 
-$ codesign --verify --verbose=1 "/Volumes/.../KlipKlick.app"
+$ codesign --verify --verbose=1 "/Volumes/.../KlipKlik.app"
 valid on disk
 satisfies its Designated Requirement
 ```
@@ -61,8 +61,8 @@ This is where an ad-hoc signed app stops being a private tool and starts being a
 problem.
 
 ```
-$ spctl --assess --type execute -vv build/KlipKlick.app
-build/KlipKlick.app: rejected
+$ spctl --assess --type execute -vv build/KlipKlik.app
+build/KlipKlik.app: rejected
 ```
 
 Gatekeeper only judges **quarantined** files, which is why a locally built app
@@ -118,11 +118,11 @@ Accessibility grant stable across rebuilds.
 
 Two questions, different answers.
 
-**Own tap — works today.** Nothing gates it. Create `d-sanoj/homebrew-klipklick`,
+**Own tap — works today.** Nothing gates it. Create `d-sanoj/homebrew-klipklik`,
 point a cask at the release asset. The install command is qualified:
 
 ```bash
-brew install --cask d-sanoj/klipklick/klipklik
+brew install --cask d-sanoj/klipklik/klipklik
 ```
 
 **`brew install klipklik` bare — needs `homebrew-cask`.** I checked Homebrew's
@@ -151,7 +151,7 @@ built it:
 
 ```
 $ gh release view v1.0.4 --json assets
-KlipKlick-1.0.4.dmg  1516069 bytes
+KlipKlik-1.0.4.dmg  1516069 bytes
 
 $ gh api repos/d-sanoj/KlipKlik/git/ref/tags/v1.0.4 --jq '.object.sha[0:7]'
 26d5466
@@ -167,7 +167,7 @@ it on first open rather than concluding the app is broken.
 plist still said `1.0.3`. Caught before publishing and bumped to `1.0.4`, but
 briefly there was a DMG labelled the same as a release with different code in it.
 
-**The repo is `KlipKlik`, the app is `KlipKlick`.** One `c` apart. The buttons say
-`KlipKlik`, the headings and bundle identifier say `KlipKlick`. Whichever wins
+**The repo is `KlipKlik`, the app is `KlipKlik`.** One `c` apart. The buttons say
+`KlipKlik`, the headings and bundle identifier say `KlipKlik`. Whichever wins
 becomes the cask token, and renaming a published cask means a deprecation dance.
 Worth settling before any of the distribution work above goes further.

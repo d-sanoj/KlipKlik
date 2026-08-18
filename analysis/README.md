@@ -1,6 +1,6 @@
-# KlipKlick — build analysis
+# KlipKlik — build analysis
 
-This folder is the working record of how KlipKlick got built: what I tried, what
+This folder is the working record of how KlipKlik got built: what I tried, what
 the numbers said, and where I was wrong. It is not a tidy retrospective written
 after the fact. The measurements are the ones I actually ran, and several of them
 contradict decisions made earlier in the same session.
@@ -34,7 +34,7 @@ If you only read two files, read [05-permissions.md](05-permissions.md) and
 
 ## The short version
 
-KlipKlick is a menu-bar clipboard manager for macOS 14+. No Dock icon, history
+KlipKlik is a menu-bar clipboard manager for macOS 14+. No Dock icon, history
 in memory only, double-tap `⌘` to open. Built with SwiftPM and a hand-assembled
 `.app` bundle because this machine has Command Line Tools and no Xcode.
 
@@ -56,7 +56,7 @@ Splitting the same data by *font* showed system text was already at 100% and
 every single loss was monospaced. Different problem entirely.
 
 **An idle app is where the waste hides, and it is invisible without a sampler.**
-KlipKlick sat at 0.9% CPU looking fine while it woke `tccd` 86,400 times a day
+KlipKlik sat at 0.9% CPU looking fine while it woke `tccd` 86,400 times a day
 from a timer whose window had been closed for hours, and asked LaunchServices who
 was frontmost 2.5 times a second. Neither is visible in Activity Monitor: the
 first is *blocked* time, not CPU. Idle CPU is now 0.05%, memory 32 MB → 20 MB.
@@ -76,7 +76,7 @@ Swift files. They compile against the shipped source with `swiftc` and need no
 project setup:
 
 ```bash
-swiftc -O -o /tmp/bench Sources/KlipKlick/Core/GlyphRepair.swift bench.swift
+swiftc -O -o /tmp/bench Sources/KlipKlik/Core/GlyphRepair.swift bench.swift
 /tmp/bench
 ```
 

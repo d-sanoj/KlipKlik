@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="Resources/AppIcon.png" width="120" alt="KlipKlick" />
+<img src="Resources/AppIcon.png" width="120" alt="KlipKlik" />
 
-# KlipKlick
+# KlipKlik
 
 **A fast, keyboard-first clipboard manager that lives in the macOS menu bar.**
 
@@ -36,15 +36,15 @@ pointer is — type to search, ↩ to paste.
 ### Download
 
 Grab the `.dmg` from the [latest release](https://github.com/d-sanoj/KlipKlik/releases/latest),
-open it, and drag KlipKlick to Applications.
+open it, and drag KlipKlik to Applications.
 
-KlipKlick is ad-hoc signed rather than notarised, so macOS quarantines it on
+KlipKlik is ad-hoc signed rather than notarised, so macOS quarantines it on
 download and refuses to launch it — usually claiming the app *"is damaged and
 can't be opened"*. It is not damaged; that is Gatekeeper reacting to the absent
 Developer ID. Clear the quarantine flag once:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/KlipKlick.app
+xattr -dr com.apple.quarantine /Applications/KlipKlik.app
 ```
 
 Then open it normally. It appears in the menu bar, not the Dock — a welcome
@@ -60,12 +60,12 @@ cd KlipKlik
 ./Scripts/build_app.sh release
 ```
 
-The result is `build/KlipKlick.app`. A locally built app is not quarantined, so
+The result is `build/KlipKlik.app`. A locally built app is not quarantined, so
 it launches without the `xattr` step.
 
 ### Uninstall
 
-**Settings ▸ Storage ▸ Uninstall KlipKlick…** revokes both permissions, removes
+**Settings ▸ Storage ▸ Uninstall KlipKlik…** revokes both permissions, removes
 the login item, and deletes every stored setting, then offers to move the app to
 the Trash. Dragging the app to the Trash on its own leaves the privacy grants
 behind, and macOS matches those by bundle identifier — so a later reinstall
@@ -78,9 +78,9 @@ inherits them.
 | `./Scripts/build_app.sh` | Debug build, faster to compile |
 | `./Scripts/make_dmg.sh` | Package a disk image |
 | `./Scripts/make_icon.sh` | Rebuild the icon after editing `Resources/AppIcon.png` |
-| `KLIPKLICK_ICON_RADIUS=0.12` | Tighter icon corners (default `0.18`) |
-| `KLIPKLICK_SIGN_IDENTITY="…"` | Sign with a real identity so permissions survive rebuilds |
-| `KLIPKLICK_DEBUG=1` | Log every clipboard capture to stderr |
+| `KLIPKLIK_ICON_RADIUS=0.12` | Tighter icon corners (default `0.18`) |
+| `KLIPKLIK_SIGN_IDENTITY="…"` | Sign with a real identity so permissions survive rebuilds |
+| `KLIPKLIK_DEBUG=1` | Log every clipboard capture to stderr |
 
 Ad-hoc signatures change on every rebuild, and macOS ties Accessibility and
 Screen Recording to the signature — so those grants lapse each time you build
@@ -154,8 +154,8 @@ Two tiers, with deliberately different lifetimes:
 
 | | Where | Lifetime |
 | --- | --- | --- |
-| **Pinned** | `Application Support/KlipKlick` | Until you clear them — survives quit and reboot |
-| **Everything else** | `Caches/KlipKlick` | Deleted on quit and at the daily purge |
+| **Pinned** | `Application Support/KlipKlik` | Until you clear them — survives quit and reboot |
+| **Everything else** | `Caches/KlipKlik` | Deleted on quit and at the daily purge |
 
 The key is a `0600` file, deliberately not the Keychain: the Keychain gates
 access on the code signature, and an ad-hoc signature changes with every build,
@@ -224,13 +224,13 @@ each one its own **Open Settings…** and **Reset permission** button.
 > permissions to the code signature — which changes on every rebuild, silently
 > invalidating the grant. The entry in System Settings still looks enabled but
 > no longer matches, and toggling it off and on will not fix it; only a reset
-> will. Set `KLIPKLICK_SIGN_IDENTITY` to a real signing identity to avoid this
+> will. Set `KLIPKLIK_SIGN_IDENTITY` to a real signing identity to avoid this
 > entirely. Screen Recording additionally needs a relaunch to take effect.
 
 ## Development
 
 ```
-Sources/KlipKlick/
+Sources/KlipKlik/
   AppDelegate.swift    Menu bar item, clock, status menu
   Core/                Clipboard monitor, history, capture tools, settings
   Core/Shelf/          Drag detection, shelf model, storage, file actions

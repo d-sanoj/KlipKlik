@@ -9,7 +9,7 @@
 //   /tmp/perf hash    <some.tiff>
 //
 //   swiftc -O -o /tmp/rt analysis/code/image-roundtrip.swift \
-//       Sources/KlipKlick/Models/ClipboardItem.swift
+//       Sources/KlipKlik/Models/ClipboardItem.swift
 //   /tmp/rt <some.png>
 
 import AppKit

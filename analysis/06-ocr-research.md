@@ -196,7 +196,7 @@ measurement. Worth stating plainly.
 
 For text that is currently on screen, OCR is the wrong tool. The text is already
 text — the Accessibility API returns the exact string, `⌘` intact, with no
-recognition step. It is what VoiceOver uses, and KlipKlick already holds the
+recognition step. It is what VoiceOver uses, and KlipKlik already holds the
 permission it needs.
 
 | Source | Exact text available? |

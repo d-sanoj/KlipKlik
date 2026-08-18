@@ -10,7 +10,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE="$ROOT/Resources/AppIcon.png"
 OUT="$ROOT/Resources/AppIcon.icns"
 # Fraction of the icon's width. macOS's own squircle is ~0.22; this is gentler.
-RADIUS="${KLIPKLICK_ICON_RADIUS:-0.18}"
+RADIUS="${KLIPKLIK_ICON_RADIUS:-0.18}"
 
 if [ ! -f "$SOURCE" ]; then
     echo "No $SOURCE — save the artwork there first (square PNG, 1024×1024)." >&2

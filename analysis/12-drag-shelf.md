@@ -153,7 +153,7 @@ at `x=665, width=185`. Flush, aligned, and the only visible part is a 15pt lip.
 
 ## Reusing the cut-and-move trick
 
-That action is [`FinderCutMove`](../Sources/KlipKlick/Core/FinderCutMove.swift)
+That action is [`FinderCutMove`](../Sources/KlipKlik/Core/FinderCutMove.swift)
 again: put the files on the pasteboard, send Finder ⌥⌘V, let Finder do both
 halves. Conflict resolution, the progress sheet, and undo already exist and are
 Apple's. Copying the files and unlinking the originals would mean reimplementing
@@ -177,7 +177,7 @@ anything itself.
 
 ## Encryption, and the one place it does not apply
 
-Everything else KlipKlick writes is AES-GCM sealed. Shelves are split:
+Everything else KlipKlik writes is AES-GCM sealed. Shelves are split:
 
 * **The index** — names, tints, window positions, referenced paths — is sealed
   like the pinned archive.

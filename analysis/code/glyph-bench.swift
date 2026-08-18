@@ -1,7 +1,7 @@
 // Benchmark for GlyphRepair. Compile against the shipped source:
 //
 //   mkdir -p /tmp/gb && cp analysis/code/glyph-bench.swift /tmp/gb/main.swift
-//   swiftc -O -o /tmp/gb/run Sources/KlipKlick/Core/GlyphRepair.swift /tmp/gb/main.swift
+//   swiftc -O -o /tmp/gb/run Sources/KlipKlik/Core/GlyphRepair.swift /tmp/gb/main.swift
 //   /tmp/gb/run
 //
 // It has to be copied to main.swift: swiftc only allows top-level statements

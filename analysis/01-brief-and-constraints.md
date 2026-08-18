@@ -51,11 +51,11 @@ The answer was SwiftPM for compilation plus a shell script that assembles the
 `.app` bundle by hand:
 
 ```
-build/KlipKlick.app/
+build/KlipKlik.app/
   Contents/
     Info.plist          ← copied from Resources/
     PkgInfo             ← "APPL????"
-    MacOS/KlipKlick     ← the SwiftPM binary
+    MacOS/KlipKlik     ← the SwiftPM binary
     Resources/AppIcon.icns
 ```
 

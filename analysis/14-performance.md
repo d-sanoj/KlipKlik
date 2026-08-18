@@ -139,7 +139,7 @@ The refresh was worse than the build. `menuNeedsUpdate` on the status menu calle
 flag lookup and offset string — **every time the clock was clicked**, to update
 submenus that were mostly never opened.
 
-**Fix.** [`LazyMenu`](../Sources/KlipKlick/UI/LazyMenu.swift): an `NSMenuDelegate`
+**Fix.** [`LazyMenu`](../Sources/KlipKlik/UI/LazyMenu.swift): an `NSMenuDelegate`
 that builds on first open and refreshes on every one after. Menus are only ever
 displayed one level at a time, so nothing below the level being shown has to
 exist. The status menu now refreshes one line; a region refreshes its own zones
@@ -418,7 +418,7 @@ swiftc -O -o /tmp/perf analysis/code/perf-bench.swift
 /tmp/perf hash some.tiff      # fingerprint hashing options
 
 swiftc -O -o /tmp/rt analysis/code/image-roundtrip.swift \
-    Sources/KlipKlick/Models/ClipboardItem.swift
+    Sources/KlipKlik/Models/ClipboardItem.swift
 /tmp/rt some.png              # image compaction, losslessness
 ```
 
@@ -427,9 +427,9 @@ Idle CPU and memory, against a build of the previous commit:
 ```bash
 git worktree add /tmp/prev HEAD~1 && (cd /tmp/prev && ./Scripts/build_app.sh release)
 # launch each, wait for it to settle, then over a fixed window:
-ps -o time= -p $(pgrep -x KlipKlick)
-footprint -p $(pgrep -x KlipKlick)
-heap $(pgrep -x KlipKlick) | grep "All zones"
+ps -o time= -p $(pgrep -x KlipKlik)
+footprint -p $(pgrep -x KlipKlik)
+heap $(pgrep -x KlipKlik) | grep "All zones"
 ```
 
 `footprint` and `heap` disagree by design — the first counts dirty pages, the

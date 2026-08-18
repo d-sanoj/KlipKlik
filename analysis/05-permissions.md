@@ -32,7 +32,7 @@ flowchart LR
     A[Edit source] --> B[Rebuild]
     B --> C[New cdhash]
     C --> D[TCC entry no longer matches]
-    D --> E["System Settings still shows<br/>KlipKlick, toggle still blue"]
+    D --> E["System Settings still shows<br/>KlipKlik, toggle still blue"]
     E --> F["AXIsProcessTrusted → false"]
     F --> G["Features silently dead"]
 
@@ -47,7 +47,7 @@ does not fix it. The entry has to be cleared and re-approved.
 Measured directly:
 
 ```
-$ codesign -dvvv build/KlipKlick.app | grep CDHash
+$ codesign -dvvv build/KlipKlik.app | grep CDHash
 CDHash=96fe8bc510abe6b8d2ba26f3c5fd82f2298f6f6c     ← before
 
 # ... source edit, rebuild ...
@@ -94,12 +94,12 @@ the permission it needed.
 
 Test the app the way it is launched, not the way that is convenient for reading
 logs. The convenience *was* the confound. Writing state to
-`/tmp/klipklick-trust.txt` made the difference visible in one line, and that
+`/tmp/klipklik-trust.txt` made the difference visible in one line, and that
 diagnostic stayed in the app because this class of bug is invisible without it.
 
 ## The Screen Recording registration bug
 
-Separate bug, same family. The user could not find KlipKlick in the Screen
+Separate bug, same family. The user could not find KlipKlik in the Screen
 Recording list to enable it.
 
 ```swift
@@ -111,7 +111,7 @@ static func promptIfNeverAsked() -> Bool {
 
 static func allow() -> Bool {
     if promptIfNeverAsked() { return true }
-    openSettingsPane()     // opens a list with no KlipKlick row in it
+    openSettingsPane()     // opens a list with no KlipKlik row in it
     return false
 }
 ```
@@ -124,7 +124,7 @@ rebuild removed the row with nothing ever re-adding it.
 Confirmed before changing anything:
 
 ```
-$ defaults read com.sanoj.KlipKlick didAskForScreenRecording
+$ defaults read com.sanoj.KlipKlik didAskForScreenRecording
 1
 ```
 
@@ -152,26 +152,26 @@ openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem \
   -days 3650 -config openssl.cnf -extensions v3     # codeSigning EKU
 openssl pkcs12 -export -inkey key.pem -in cert.pem -out identity.p12 ...
 security import identity.p12 -k ~/Library/Keychains/login.keychain-db \
-  -P klipklick -T /usr/bin/codesign -A
+  -P klipklik -T /usr/bin/codesign -A
 ```
 
 Imported, but not trusted:
 
 ```
-1) CED295A0... "KlipKlick Self-Signed" (CSSMERR_TP_NOT_TRUSTED)
+1) CED295A0... "KlipKlik Self-Signed" (CSSMERR_TP_NOT_TRUSTED)
 ```
 
 After `security add-trusted-cert -r trustRoot -p codeSign`:
 
 ```
-1) CED295A0... "KlipKlick Self-Signed"
+1) CED295A0... "KlipKlik Self-Signed"
    1 valid identities found
 ```
 
 Then signing failed anyway:
 
 ```
-build/KlipKlick.app: errSecInternalComponent
+build/KlipKlik.app: errSecInternalComponent
 ```
 
 That is codesign unable to reach the private key. `security
@@ -181,7 +181,7 @@ Abandoned. The certificate and its trust setting were removed from the keychain
 rather than left as clutter in the user's security configuration:
 
 ```
-$ security find-identity -p codesigning | grep -i klipklick
+$ security find-identity -p codesigning | grep -i klipklik
 none (clean)
 ```
 
@@ -195,11 +195,11 @@ Since the churn could not be eliminated, the app makes it visible and fixable.
 
 **A permissions window instead of the bare system alert.** The macOS
 Accessibility alert has no icon, no account of what it unlocks, and no way back
-once dismissed. It now appears in KlipKlick's own window, in one of two modes:
+once dismissed. It now appears in KlipKlik's own window, in one of two modes:
 
 | | First run | Permission missing later |
 | --- | --- | --- |
-| Heading | Welcome to KlipKlick | KlipKlick needs permission |
+| Heading | Welcome to KlipKlik | KlipKlik needs permission |
 | Body | Where it lives, how to open it | What is off, and that the grant lapsed because the signature changed |
 | Button | Start Using KlipKlik | Done / Restart |
 
@@ -259,7 +259,7 @@ Now it keys off the user having *asked*, not off a confirmed change.
 Both permissions granted, verified on a normally launched app:
 
 ```
-$ cat /tmp/klipklick-trust.txt
+$ cat /tmp/klipklik-trust.txt
 trusted=true pid=73606
 ```
 

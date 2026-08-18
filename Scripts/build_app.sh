@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds KlipKlick and assembles KlipKlick.app.
+# Builds KlipKlik and assembles KlipKlik.app.
 #
 # There is no Xcode project here on purpose: this machine has only the Command
 # Line Tools, so SwiftPM compiles the binary and this script wraps it in the
@@ -8,7 +8,7 @@ set -euo pipefail
 
 CONFIGURATION="${1:-release}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="$ROOT/build/KlipKlick.app"
+APP="$ROOT/build/KlipKlik.app"
 
 cd "$ROOT"
 
@@ -24,12 +24,12 @@ if [ "$CONFIGURATION" = "release" ]; then
 fi
 
 swift build -c "$CONFIGURATION" "${SWIFT_FLAGS[@]}"
-BINARY="$(swift build -c "$CONFIGURATION" "${SWIFT_FLAGS[@]}" --show-bin-path)/KlipKlick"
+BINARY="$(swift build -c "$CONFIGURATION" "${SWIFT_FLAGS[@]}" --show-bin-path)/KlipKlik"
 
 echo "==> Assembling bundle"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BINARY" "$APP/Contents/MacOS/KlipKlick"
+cp "$BINARY" "$APP/Contents/MacOS/KlipKlik"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 
 # Local symbols are more than half the binary — 2.63 MB down to 1.22 MB here —
@@ -37,7 +37,7 @@ cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 # afterwards rewrites the file and invalidates the signature macOS hangs the
 # privacy grants on.
 if [ "$CONFIGURATION" = "release" ]; then
-    strip -x "$APP/Contents/MacOS/KlipKlick"
+    strip -x "$APP/Contents/MacOS/KlipKlik"
 fi
 
 # Rebuild the .icns whenever the artwork is newer, so the icon is never stale
@@ -61,9 +61,9 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 # rebuild and silently revokes that permission — use Preferences ▸ Shortcuts ▸
 # "Reset permission" afterwards to clear the stale grant and re-approve.
 #
-# Set KLIPKLICK_SIGN_IDENTITY to a real code-signing identity to make the grant
+# Set KLIPKLIK_SIGN_IDENTITY to a real code-signing identity to make the grant
 # survive rebuilds.
-IDENTITY="${KLIPKLICK_SIGN_IDENTITY:-}"
+IDENTITY="${KLIPKLIK_SIGN_IDENTITY:-}"
 
 if [ -n "$IDENTITY" ] && security find-identity -v -p codesigning | grep -qF "$IDENTITY"; then
     echo "==> Signing as '$IDENTITY'"

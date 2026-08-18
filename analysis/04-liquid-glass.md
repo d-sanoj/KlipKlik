@@ -47,7 +47,7 @@ row text:
 │  Search clipboard history        │
 │  T  SELECT * FROM clipboard...   │  ← app text
 │ re-grant Accessibility after...  │  ← readable text from behind
-│  T  KlipKlick — lightweight...   │
+│  T  KlipKlik — lightweight...   │
 └──────────────────────────────────┘
 ```
 

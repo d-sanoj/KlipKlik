@@ -97,7 +97,7 @@ The capture layer was fine. Debug logging proved it:
 capture #2699 kind=media title=Finder.icns
 capture #2700 kind=text  title=The quick brown fox jumps over the lazy dog...
 capture #2702 kind=media title=Image — 3840 × 2160
-capture #2703 kind=text  title=KlipKlick — lightweight clipboard manager
+capture #2703 kind=text  title=KlipKlik — lightweight clipboard manager
 capture #2704 kind=attachment title=com.apple.dock.plist
 ```
 

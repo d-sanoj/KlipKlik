@@ -222,21 +222,21 @@ recovered while `HTTP` and `Host` are left alone.
 ## T10 — Gatekeeper
 
 ```
-$ spctl --assess --type execute -vv build/KlipKlick.app
-build/KlipKlick.app: rejected
+$ spctl --assess --type execute -vv build/KlipKlik.app
+build/KlipKlik.app: rejected
 
-$ xcrun stapler validate build/KlipKlick.app
-KlipKlick.app does not have a ticket stapled to it.
+$ xcrun stapler validate build/KlipKlik.app
+KlipKlik.app does not have a ticket stapled to it.
 ```
 
 The distinction that matters is quarantine:
 
 ```
-$ gktool scan KlipKlick.app                      # locally built
+$ gktool scan KlipKlik.app                      # locally built
 Scan completed and software is allowed by system policy.
 
-$ xattr -w com.apple.quarantine "0083;00000000;Safari;" KlipKlick.app
-$ gktool scan KlipKlick.app                      # as downloaded
+$ xattr -w com.apple.quarantine "0083;00000000;Safari;" KlipKlik.app
+$ gktool scan KlipKlik.app                      # as downloaded
 Scan completed, but failed because the software is not signed by a
 distributor that meets the system Gatekeeper requirements.
 ```
