@@ -49,13 +49,6 @@ enum AccessibilityPermission {
         AXIsProcessTrusted()
     }
 
-    /// Shows the system prompt with the "Open System Settings" button.
-    @discardableResult
-    static func requestIfNeeded() -> Bool {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        return AXIsProcessTrustedWithOptions(options as CFDictionary)
-    }
-
     /// The shortest route to actually granting Accessibility.
     ///
     /// There is no API that grants it — macOS reserves that for the user, and
@@ -78,17 +71,19 @@ enum AccessibilityPermission {
         NSWorkspace.shared.open(url)
     }
 
-    /// Clears this app's Accessibility approval and asks for it again.
+    /// Clears this app's Accessibility approval and offers it again.
     ///
-    /// This only ever *revokes*; re-approval still goes through the system
-    /// dialog, which is the only thing that can actually grant it.
+    /// This only ever *revokes*; re-approval still happens in System Settings,
+    /// which is the only thing that can actually grant it.
     @discardableResult
     static func reset() -> Bool {
         guard TCC.reset("Accessibility") else { return false }
-        // Ask again straight away, so the user gets the approval dialog rather
-        // than having to go hunting for it.
+        // Straight back to the pane, so the stale row can be switched on again
+        // without hunting for it. Deliberately the same route as `allow()`
+        // rather than the system alert: the alert's only action is to open this
+        // pane, so raising it here left two prompts on screen for one grant.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            requestIfNeeded()
+            allow()
         }
         return true
     }

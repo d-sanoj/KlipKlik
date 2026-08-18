@@ -1,5 +1,6 @@
 import AppKit
 import ScreenCaptureKit
+import Security
 import Vision
 
 /// Grabs a region of the screen, reads the text out of it, and copies that —
@@ -18,7 +19,50 @@ enum TextGrab {
     /// help, because TCC attributes the capture to the app that spawned it.
     static var isPermitted: Bool { CGPreflightScreenCaptureAccess() }
 
-    private static let askedKey = "didAskForScreenRecording"
+    /// The code signature under which macOS last raised its own dialog.
+    ///
+    /// macOS shows that dialog once per signature and silently returns false
+    /// every time after, so whether it is still available is what decides
+    /// between letting it speak and standing in for it. Keyed to the signature
+    /// rather than a bare "have we asked" flag because a rebuild or an update
+    /// makes the dialog available again — and the flag said otherwise, which is
+    /// what put the dialog and the Settings pane on screen together.
+    private static let askedSignatureKey = "screenRecordingAskedSignature"
+
+    /// This build's cdhash, or "" if it cannot be read.
+    private static var signature: String {
+        var code: SecCode?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { return "" }
+
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess,
+              let staticCode
+        else { return "" }
+
+        var info: CFDictionary?
+        guard SecCodeCopySigningInformation(
+            staticCode, SecCSFlags(rawValue: 0), &info
+        ) == errSecSuccess,
+            let dictionary = info as? [String: Any],
+            let hash = dictionary[kSecCodeInfoUnique as String] as? Data
+        else { return "" }
+
+        return hash.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// True when a request would raise the system dialog rather than do nothing.
+    private static var systemWillPrompt: Bool {
+        // An unreadable signature is treated as already asked: opening the pane
+        // when the dialog does happen to appear is the same duplicate this
+        // exists to prevent, so the quiet route is the safer default.
+        let current = signature
+        guard !current.isEmpty else { return false }
+        return UserDefaults.standard.string(forKey: askedSignatureKey) != current
+    }
+
+    private static func rememberAsked() {
+        UserDefaults.standard.set(signature, forKey: askedSignatureKey)
+    }
 
     /// Asks macOS to prompt, but only the first time.
     ///
@@ -27,9 +71,8 @@ enum TextGrab {
     /// never prompts again — it just returns false — and an app that stays
     /// silent then looks broken, so the caller explains it instead.
     static func promptIfNeverAsked() -> Bool {
-        let defaults = UserDefaults.standard
-        guard !defaults.bool(forKey: askedKey) else { return false }
-        defaults.set(true, forKey: askedKey)
+        guard systemWillPrompt else { return false }
+        rememberAsked()
         // Also registers the app in the Screen Recording list, so it can be
         // switched on by hand even if this prompt is dismissed.
         return !CGRequestScreenCaptureAccess()
@@ -51,10 +94,19 @@ enum TextGrab {
     /// - Returns: true if Screen Recording is already granted.
     @discardableResult
     static func allow() -> Bool {
+        // Read before requesting: the request is what spends the dialog.
+        let willPrompt = systemWillPrompt
+
         let granted = CGRequestScreenCaptureAccess()
-        UserDefaults.standard.set(true, forKey: askedKey)
+        rememberAsked()
         guard !granted else { return true }
-        openSettingsPane()
+
+        // One prompt, never two. `CGRequestScreenCaptureAccess` returns the
+        // current answer immediately and draws its dialog afterwards, so this
+        // used to open the pane underneath a dialog that was still going up —
+        // and that dialog already offers Open System Settings itself. Stand in
+        // for it only on the asks where it will not come.
+        if !willPrompt { openSettingsPane() }
         return false
     }
 
@@ -64,7 +116,7 @@ enum TextGrab {
     /// back up instead of going straight to our own explanation.
     @discardableResult
     static func resetPermission() -> Bool {
-        UserDefaults.standard.set(false, forKey: askedKey)
+        UserDefaults.standard.removeObject(forKey: askedSignatureKey)
         return TCC.reset("ScreenCapture")
     }
 
