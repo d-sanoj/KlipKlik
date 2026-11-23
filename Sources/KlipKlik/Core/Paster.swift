@@ -4,8 +4,14 @@ import Carbon.HIToolbox
 /// Synthesises keystrokes into whichever app is frontmost.
 enum Paster {
     /// ⌘V — ordinary paste.
+    ///
+    /// Routed through `PasteKeyRouter`, which steps aside for it: while a
+    /// feature holds the ⌘V hot key, a ⌘V we post ourselves would otherwise be
+    /// caught by that same key instead of reaching the app.
     static func paste() {
-        send(keyCode: CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
+        PasteKeyRouter.shared.passThrough {
+            send(keyCode: CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
+        }
     }
 
     /// ⌥⌘V — Finder's "Move Item Here", which completes a cut-and-move.
@@ -16,6 +22,32 @@ enum Paster {
     /// ⌘C — used to make Finder put the current selection on the pasteboard.
     static func copy() {
         send(keyCode: CGKeyCode(kVK_ANSI_C), flags: .maskCommand)
+    }
+
+    /// Types `text` into the frontmost app as if from the keyboard.
+    ///
+    /// Sent as Unicode strings rather than key codes, so it does not depend on
+    /// the keyboard layout. Chunked, because a single event carries at most 20
+    /// UTF-16 units.
+    static func type(_ text: String) {
+        guard AccessibilityPermission.isTrusted else { return }
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let units = Array(text.utf16)
+        var start = 0
+        while start < units.count {
+            var end = min(start + 20, units.count)
+            // Never split a surrogate pair across two events.
+            if end < units.count, UTF16.isLeadSurrogate(units[end - 1]) { end -= 1 }
+            var chunk = Array(units[start..<end])
+            for keyDown in [true, false] {
+                guard let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: keyDown)
+                else { continue }
+                event.flags = []
+                event.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
+                event.post(tap: .cgAnnotatedSessionEventTap)
+            }
+            start = end
+        }
     }
 
     static func send(keyCode: CGKeyCode, flags: CGEventFlags) {

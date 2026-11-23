@@ -24,6 +24,8 @@
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>KlipKlik asks Finder which folder is open, to save a pasted picture there, and what is selected, to send it to a shelf.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>MIT Licensed</string>
 	<key>NSSupportsAutomaticTermination</key>

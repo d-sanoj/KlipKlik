@@ -37,6 +37,10 @@ final class PopupViewModel: ObservableObject {
     var onAddToShelf: ((ClipboardItem) -> Bool)?
     /// Whether the shelf action should be offered for this item at all.
     var canAddToShelf: ((ClipboardItem) -> Bool)?
+    /// Copies text the popup produced itself (a colour in another notation).
+    var onCopyText: ((String) -> Void)?
+    /// Opens or retargets the preview beside the popup.
+    var onPreview: ((ClipboardItem) -> Void)?
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -180,6 +184,25 @@ final class PopupViewModel: ObservableObject {
     func addSelectedToShelf() {
         guard let item = selectedItem else { return }
         addToShelf(item)
+    }
+
+    /// The context menu's "Copy Colour As".
+    func copyColor(_ item: ClipboardItem, as format: ColorFormat) {
+        guard let hex = item.colorHex, let components = ColorFormat.components(fromHex: hex)
+        else { return }
+        onCopyText?(format.string(for: components))
+    }
+
+    func preview(_ item: ClipboardItem) {
+        onPreview?(item)
+    }
+
+    /// Space and ⌘Y. Reveals the selection too, so it is clear which row the
+    /// preview belongs to.
+    func previewSelected() {
+        guard let item = selectedItem else { return }
+        selectionVisible = true
+        onPreview?(item)
     }
 
     /// Footer "Clear History" — keeps pinned items.

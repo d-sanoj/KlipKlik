@@ -113,7 +113,10 @@ struct PopupView: View {
                 }
             },
             canShelve: viewModel.canShelve(item),
-            onAddToShelf: { viewModel.addToShelf(item) }
+            onAddToShelf: { viewModel.addToShelf(item) },
+            showsSourceIcon: settings.showSourceIcons,
+            onCopyColor: { viewModel.copyColor(item, as: $0) },
+            onPreview: { viewModel.preview(item) }
         )
         .id(item.id)
     }

@@ -96,7 +96,10 @@ final class HistoryStore: ObservableObject {
         // A re-copy of something already recorded moves back to the top rather
         // than creating a duplicate row, and keeps its pinned state.
         if let existing = items.firstIndex(where: { $0.fingerprint == item.fingerprint }) {
-            let moved = items.remove(at: existing)
+            var moved = items.remove(at: existing)
+            // A fresh copy restarts the age limit's clock, or a re-copied item
+            // could be swept seconds after arriving back on top.
+            moved.touchedAt = item.createdAt
             items.insert(moved, at: 0)
             return
         }
@@ -199,6 +202,19 @@ final class HistoryStore: ObservableObject {
         offloadTimer?.invalidate()
         items.removeAll { !$0.pinned }
         disk.clearCache()
+    }
+
+    /// Drops unpinned items older than the history age limit, if one is set.
+    /// Runs on the purge's sweep and as the popup opens.
+    func pruneExpired(now: Date = Date()) {
+        guard let maxAge = Settings.shared.historyMaxAge.interval else { return }
+        let cutoff = now.addingTimeInterval(-maxAge)
+        let expired = items.filter { !$0.pinned && ($0.touchedAt ?? $0.createdAt) < cutoff }
+        guard !expired.isEmpty else { return }
+
+        let ids = Set(expired.map(\.id))
+        for item in expired { disk.delete(item) }
+        items.removeAll { ids.contains($0.id) }
     }
 
     /// Trims to the configured history size, evicting oldest first. Pinned items

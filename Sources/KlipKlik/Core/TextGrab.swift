@@ -143,7 +143,12 @@ enum TextGrab {
                 return
             }
 
-            guard let text = recognizeText(in: image), !text.isEmpty else {
+            // A code in the selection is what was meant: a box drawn around a
+            // QR code wants its link, not the stray caption beside it.
+            let codes = readCodes(in: image)
+            guard let text = codes.isEmpty ? recognizeText(in: image) : codes.joined(separator: "\n"),
+                  !text.isEmpty
+            else {
                 finish(.failure(.noTextFound))
                 return
             }
@@ -195,6 +200,28 @@ enum TextGrab {
             $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
                 == display.displayID
         }?.backingScaleFactor ?? 2
+    }
+
+    /// Payloads of any QR, Aztec, PDF417 or Data Matrix codes in the image, in
+    /// reading order (top to bottom, then left to right), duplicates dropped.
+    static func readCodes(in image: CGImage) -> [String] {
+        let request = VNDetectBarcodesRequest()
+        request.symbologies = [.qr, .aztec, .pdf417, .dataMatrix, .microQR]
+
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        guard (try? handler.perform([request])) != nil,
+              let observations = request.results
+        else { return [] }
+
+        var seen = Set<String>()
+        return observations
+            .sorted {
+                abs($0.boundingBox.midY - $1.boundingBox.midY) > 0.05
+                    ? $0.boundingBox.midY > $1.boundingBox.midY
+                    : $0.boundingBox.minX < $1.boundingBox.minX
+            }
+            .compactMap(\.payloadStringValue)
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 
     private static func recognizeText(in image: CGImage) -> String? {

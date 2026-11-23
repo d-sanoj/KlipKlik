@@ -67,6 +67,13 @@ final class DragWatcher {
 
     var isSuppressed: Bool { suppressionDepth > 0 }
 
+    /// When set, a drag is only reported once the pointer has been shaken
+    /// during it — `ShelfTrigger.shake`.
+    var requiresShake = false
+    /// A drag that has started but not yet been shaken.
+    private var pendingPayload: Payload?
+    private var shake = ShakeDetector()
+
     func start() {
         stop()
 
@@ -129,6 +136,8 @@ final class DragWatcher {
             // count is unambiguously this drag and not the last one's residue.
             baselineChangeCount = NSPasteboard(name: .drag).changeCount
             sessionReported = false
+            pendingPayload = nil
+            shake.reset()
             // A button seen by the slow timer rather than the monitor still has
             // to be followed at full rate.
             schedule(fast: true)
@@ -137,6 +146,7 @@ final class DragWatcher {
         if !isDown, wasButtonDown {
             if sessionReported { onDragEnded?() }
             sessionReported = false
+            pendingPayload = nil
         }
 
         // Nothing is held, so there is nothing to watch closely for.
@@ -147,6 +157,17 @@ final class DragWatcher {
         // comes up: the pad does not follow the pointer, deliberately.
         guard isDown, !isSuppressed, !sessionReported else { return }
 
+        // A drag already under way, waiting for the shake.
+        if let pending = pendingPayload {
+            let point = NSEvent.mouseLocation
+            if shake.add(x: point.x, at: ProcessInfo.processInfo.systemUptime) {
+                pendingPayload = nil
+                sessionReported = true
+                onDragBegan?(pending, point)
+            }
+            return
+        }
+
         let pasteboard = NSPasteboard(name: .drag)
         guard pasteboard.changeCount != baselineChangeCount else { return }
 
@@ -155,6 +176,13 @@ final class DragWatcher {
         // it is and the next tick will look again.
         let payload = Self.read(pasteboard)
         guard !payload.isEmpty else { return }
+
+        if requiresShake {
+            pendingPayload = payload
+            shake.reset()
+            _ = shake.add(x: NSEvent.mouseLocation.x, at: ProcessInfo.processInfo.systemUptime)
+            return
+        }
 
         sessionReported = true
         onDragBegan?(payload, NSEvent.mouseLocation)

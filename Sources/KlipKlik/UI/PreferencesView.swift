@@ -1,23 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-enum PrefsTab: String, CaseIterable, Identifiable {
-    case general, shelf, shortcuts, appearance, ignored, storage
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .general: return "General"
-        case .shelf: return "Shelf"
-        case .shortcuts: return "Shortcuts"
-        case .appearance: return "Appearance"
-        case .ignored: return "Ignored Apps"
-        case .storage: return "Storage"
-        }
-    }
-}
-
 /// One entry in the ignored list: the app's real icon and name, resolved from
 /// its bundle identifier.
 private struct IgnoredAppRow: View {
@@ -139,8 +122,8 @@ private struct PermissionRow: View {
 struct PreferencesView: View {
     @ObservedObject private var settings = Settings.shared
     @ObservedObject var store: HistoryStore
+    @ObservedObject var navigation: SettingsNavigation
     @Environment(\.colorScheme) private var colorScheme
-    @State private var tab: PrefsTab = .general
     @ObservedObject private var permissions = PermissionStatus.shared
     @State private var storageTick = 0
 
@@ -150,27 +133,13 @@ struct PreferencesView: View {
     private var palette: Palette { .resolve(colorScheme) }
 
     var body: some View {
-        VStack(spacing: 0) {
-            tabBar
-            Rectangle().fill(palette.divider).frame(height: 1)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    switch tab {
-                    case .general: general
-                    case .shelf: shelf
-                    case .shortcuts: shortcuts
-                    case .appearance: appearance
-                    case .ignored: ignored
-                    case .storage: storage
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 14)
-            }
+        HStack(spacing: 0) {
+            SettingsSidebar(navigation: navigation, palette: palette)
+            Rectangle().fill(palette.divider).frame(width: 1)
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(width: 560, height: 420)
+        .frame(minWidth: 880, minHeight: 580)
         // `.regular` rather than `.clear` here: this window is dense text, and
         // the more transparent glass makes a settings form hard to read.
         .background(
@@ -184,26 +153,95 @@ struct PreferencesView: View {
         .onAppear { settings.refreshLaunchAtLogin() }
     }
 
-    private var tabBar: some View {
-        HStack(spacing: 6) {
-            ForEach(PrefsTab.allCases) { candidate in
-                TabPill(label: candidate.label, isActive: tab == candidate, palette: palette) {
-                    tab = candidate
+    @ViewBuilder
+    private var detail: some View {
+        let page = navigation.page
+        if page.isTool {
+            toolPage(page)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(page.title)
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(palette.textPrimary)
+                        Text(page.subtitle)
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    .padding(.bottom, 4)
+
+                    settingsPage(page)
                 }
+                .frame(maxWidth: 640, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 28)
+                .padding(.vertical, 22)
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
     }
 
-    // MARK: General
+    @ViewBuilder
+    private func toolPage(_ page: SettingsPage) -> some View {
+        let tools = navigation.tools
+        switch page {
+        case .uninstall: UninstallView(model: tools.uninstall)
+        case .leftovers: OrphanView(model: tools.leftovers)
+        case .cache: CacheView(model: tools.cache)
+        case .homebrew: HomebrewView()
+        case .ports: PortsView(model: tools.ports)
+        default: EmptyView()
+        }
+    }
 
-    private var general: some View {
-        VStack(spacing: 0) {
-            pastingSection
-            behaviourSection
-            historySection
+    /// Settings come in cards, one per group of related rows, so a long page
+    /// reads as a few short ones.
+    @ViewBuilder
+    private func settingsPage(_ page: SettingsPage) -> some View {
+        switch page {
+        case .general:
+            card("Pasting") { pastingSection }
+            card("Clipboard") { clipboardSection }
+            card("History & startup") { historySection }
+        case .snippets: card(nil) { SnippetsPane(palette: palette) }
+        case .ignored: card(nil) { ignored }
+        case .storage: card(nil) { storage }
+        case .shelf: card(nil) { shelf }
+        case .finderDock:
+            card("Finder") { behaviourSection }
+            card("Dock & apps") { macSection }
+        case .appearance: card(nil) { appearance }
+        case .shortcuts:
+            card("Keys") { shortcuts }
+            card("Permissions") { permissionsSection }
+            card("In the popup") { inPopupShortcuts }
+        default: EmptyView()
+        }
+    }
+
+    private func card<Content: View>(_ title: String?, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let title {
+                Text(title.uppercased())
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.leading, 4)
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                content()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(palette.surface.opacity(colorScheme == .dark ? 0.35 : 0.6))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(palette.divider, lineWidth: 1)
+            )
         }
     }
 
@@ -233,6 +271,22 @@ struct PreferencesView: View {
             }
 
             Caption(settings.shelfTrigger.detail, palette: palette, dividing: true)
+
+            PrefRow(palette: palette, showsDivider: false) {
+                Text("Keep items after dragging them out").prefLabel(palette)
+            } trailing: {
+                SwitchToggle(isOn: $settings.shelfKeepAfterDrag, palette: palette)
+                    .disabled(!settings.shelvesEnabled)
+                    .opacity(settings.shelvesEnabled ? 1 : 0.4)
+            }
+
+            Caption(
+                "Off: a file leaves the shelf once dropped somewhere. On: it stays, so it can be "
+                    + "dropped in several places. Move shelves always empty. In Finder, ⇧ ⌥ ⌘ S "
+                    + "sends the selected files to a shelf.",
+                palette: palette,
+                dividing: true
+            )
 
             PrefRow(palette: palette, showsDivider: true) {
                 Text("Keep shelves after quitting").prefLabel(palette)
@@ -270,11 +324,41 @@ struct PreferencesView: View {
                 dividing: true
             )
 
-            PrefRow(palette: palette, showsDivider: true) {
+            PrefRow(palette: palette, showsDivider: false) {
                 Text("Paste automatically after selecting").prefLabel(palette)
             } trailing: {
                 SwitchToggle(isOn: $settings.pasteAutomatically, palette: palette)
             }
+        }
+    }
+
+    private var clipboardSection: some View {
+        VStack(spacing: 0) {
+            PrefRow(palette: palette, showsDivider: false) {
+                Text("Clean copied links").prefLabel(palette)
+            } trailing: {
+                SwitchToggle(isOn: $settings.cleanLinks, palette: palette)
+            }
+
+            Caption(
+                "Removes tracking parts like utm_source, fbclid and YouTube's si= from a copied "
+                    + "link. The menu's Restore Original Link puts the full one back.",
+                palette: palette,
+                dividing: true
+            )
+
+            PrefRow(palette: palette, showsDivider: false) {
+                Text("Forget items after").prefLabel(palette)
+            } trailing: {
+                SegmentedPicker(selection: $settings.historyMaxAge, palette: palette) { $0.label }
+            }
+
+            Caption(
+                "Unpinned items older than this leave history. History is cleared at "
+                    + "\(formattedPurgeHour) every day regardless.",
+                palette: palette,
+                dividing: false
+            )
         }
     }
 
@@ -290,6 +374,55 @@ struct PreferencesView: View {
                 "⌘ X marks, ⌘ V moves. Needs Accessibility.",
                 palette: palette,
                 dividing: true
+            )
+
+            PrefRow(palette: palette, showsDivider: true) {
+                Text("F2 renames in Finder").prefLabel(palette)
+            } trailing: {
+                SwitchToggle(isOn: $settings.finderRenameKey, palette: palette)
+            }
+
+            PrefRow(palette: palette, showsDivider: false) {
+                Text("Paste pictures into Finder as files").prefLabel(palette)
+            } trailing: {
+                SwitchToggle(isOn: $settings.finderPasteImage, palette: palette)
+            }
+
+            Caption(
+                "⌘ V in a Finder window with a copied picture saves it there as a PNG. "
+                    + "Asks once for permission to talk to Finder.",
+                palette: palette,
+                dividing: false
+            )
+        }
+    }
+
+    private var macSection: some View {
+        VStack(spacing: 0) {
+            PrefRow(palette: palette, showsDivider: false) {
+                Text("Dock window previews").prefLabel(palette)
+            } trailing: {
+                SwitchToggle(isOn: $settings.dockPreviews, palette: palette)
+            }
+
+            Caption(
+                "Hover an app in the Dock to see its windows; click one to bring it forward. "
+                    + "Needs Accessibility, and Screen Recording for the pictures.",
+                palette: palette,
+                dividing: true
+            )
+
+            PrefRow(palette: palette, showsDivider: false) {
+                Text("Offer to clean up removed apps").prefLabel(palette)
+            } trailing: {
+                SwitchToggle(isOn: $settings.watchRemovedApps, palette: palette)
+            }
+
+            Caption(
+                "When an app leaves Applications, KlipKlik lists the files it left behind for "
+                    + "you to review. Uninstall Cleaner, under Mac Tools, does the same on demand.",
+                palette: palette,
+                dividing: false
             )
         }
     }
@@ -381,16 +514,30 @@ struct PreferencesView: View {
                 KeyChip(text: "⌥ ⌘ S", palette: palette, muted: false, monospaced: true)
             }
 
+            PrefRow(palette: palette, showsDivider: true) {
+                Text("Finder selection to a shelf").prefLabel(palette)
+            } trailing: {
+                KeyChip(text: "⇧ ⌥ ⌘ S", palette: palette, muted: false, monospaced: true)
+            }
+
+            PrefRow(palette: palette, showsDivider: true) {
+                Text("Start / stop paste stack").prefLabel(palette)
+            } trailing: {
+                KeyChip(text: "⌃ ⌥ ⌘ C", palette: palette, muted: false, monospaced: true)
+            }
+
+            PrefRow(palette: palette, showsDivider: true) {
+                Text("Rename in Finder").prefLabel(palette)
+            } trailing: {
+                KeyChip(text: "F2", palette: palette, muted: false, monospaced: true)
+            }
+
             Text("Custom shortcuts coming later.")
                 .font(.system(size: 12))
                 .italic()
                 .foregroundStyle(palette.textTertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 12)
-
-            permissionsSection
-
-            inPopupShortcuts
+                .padding(.vertical, 8)
         }
     }
 
@@ -399,8 +546,10 @@ struct PreferencesView: View {
             PermissionRow(
                 title: "ACCESSIBILITY",
                 granted: isTrusted,
-                grantedNote: "Double-tap ⌘, auto-paste, and ⌘ X cut-and-move are active.",
-                deniedNote: "Double-tap ⌘, auto-paste, and ⌘ X cut-and-move need this.",
+                grantedNote: "Double-tap ⌘, auto-paste, cut-and-move, paste stack, snippets, "
+                    + "Finder keys and Dock previews are active.",
+                deniedNote: "Double-tap ⌘, auto-paste, cut-and-move, paste stack, snippets, "
+                    + "Finder keys and Dock previews need this.",
                 palette: palette,
                 openSettings: AccessibilityPermission.allow,
                 reset: { AccessibilityPermission.reset() }
@@ -409,8 +558,9 @@ struct PreferencesView: View {
             PermissionRow(
                 title: "SCREEN RECORDING",
                 granted: canRecordScreen,
-                grantedNote: "Screen text grab is active.",
-                deniedNote: "Screen text grab needs this. The colour picker does not.",
+                grantedNote: "Screen text and QR grab, and Dock preview pictures, are active.",
+                deniedNote: "Screen text and QR grab, and Dock preview pictures, need this. "
+                    + "The colour picker does not.",
                 palette: palette,
                 openSettings: { TextGrab.allow() },
                 reset: { TextGrab.resetPermission() }
@@ -459,6 +609,7 @@ struct PreferencesView: View {
         ("Paste selected", "↩"),
         ("Invert strip formatting", "⌥ ⇧ ↩"),
         ("Paste nth item", "⌘ 1 … ⌘ 9"),
+        ("Preview the whole item", "Space  or  ⌘ Y"),
         ("Pin / unpin", "⌥ P"),
         ("Add files to a shelf", "⌥ S"),
         ("Delete item", "⌘ ⌫"),
@@ -480,6 +631,18 @@ struct PreferencesView: View {
                 Text("Popup size").prefLabel(palette)
             } trailing: {
                 SegmentedPicker(selection: $settings.popupSize, palette: palette) { $0.label }
+            }
+
+            PrefRow(palette: palette, showsDivider: true) {
+                Text("Show app icons in the list").prefLabel(palette)
+            } trailing: {
+                SwitchToggle(isOn: $settings.showSourceIcons, palette: palette)
+            }
+
+            PrefRow(palette: palette, showsDivider: true) {
+                Text("Copy picked colours as").prefLabel(palette)
+            } trailing: {
+                SegmentedPicker(selection: $settings.colorFormat, palette: palette) { $0.label }
             }
 
             PrefRow(palette: palette, showsDivider: false) {
@@ -816,28 +979,6 @@ private struct PrefRow<Leading: View, Trailing: View>: View {
     }
 }
 
-private struct TabPill: View {
-    let label: String
-    let isActive: Bool
-    let palette: Palette
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(label)
-                .font(.system(size: 12.5, weight: isActive ? .semibold : .regular))
-                .foregroundStyle(isActive ? palette.accent : palette.textSecondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(isActive ? palette.rowSelected : .clear)
-                )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 /// The design's inline segmented control: a filled track with a pill per option.
 private struct SegmentedPicker<Value>: View
 where Value: Identifiable & Hashable & CaseIterable, Value.AllCases: RandomAccessCollection {
@@ -965,22 +1106,35 @@ private struct MockupNote: View {
 /// is switched to `.regular` for exactly as long as this window is open, and
 /// back to `.accessory` when it closes.
 final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
-    convenience init(store: HistoryStore) {
-        let hosting = NSHostingController(rootView: PreferencesView(store: store))
+    /// Which page is showing; the menu sets it to open the window on a page.
+    let pages: SettingsNavigation
+
+    init(store: HistoryStore) {
+        let pages = SettingsNavigation()
+        self.pages = pages
+        let hosting = NSHostingController(rootView: PreferencesView(store: store, navigation: pages))
         let window = NSWindow(contentViewController: hosting)
-        window.title = "Preferences"
-        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.title = "KlipKlik"
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.setContentSize(NSSize(width: 940, height: 640))
         window.isReleasedWhenClosed = false
         window.center()
-        self.init(window: window)
+        super.init(window: window)
         window.delegate = self
+        // Confirmations on the tool pages are sheets on this window.
+        ToolsAlert.window = window
     }
+
+    required init?(coder: NSCoder) { nil }
 
     /// True between `show()` and `windowWillClose`, so an already-open window
     /// re-shown from the menu doesn't start the watch twice.
     private var isWatchingPermissions = false
 
-    func show() {
+    /// Opens the window, on `page` when given.
+    func show(_ page: SettingsPage? = nil) {
+        if let page { pages.page = page }
         // The login item can be revoked in System Settings while the window is
         // closed, so re-read it rather than trusting what the switch last showed.
         Settings.shared.refreshLaunchAtLogin()
@@ -1005,8 +1159,110 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
         // Back to menu-bar-only. Deferred, because dropping the policy while
         // the close is still in flight leaves the Dock tile behind.
-        DispatchQueue.main.async {
-            NSApp.setActivationPolicy(.accessory)
+        DispatchQueue.main.async { [weak self] in
+            dropDockIconUnlessWindowsRemain(except: self?.window)
+        }
+    }
+}
+
+// MARK: - Snippets
+
+/// The Snippets tab: what each abbreviation expands to.
+private struct SnippetsPane: View {
+    let palette: Palette
+    @ObservedObject private var settings = Settings.shared
+    @ObservedObject private var store = SnippetStore.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PrefRow(palette: palette, showsDivider: false) {
+                Text("Expand snippets as you type").prefLabel(palette)
+            } trailing: {
+                SwitchToggle(isOn: $settings.snippetsEnabled, palette: palette)
+            }
+
+            Caption(
+                "Type an abbreviation anywhere and it turns into the saved text. Start "
+                    + "abbreviations with a symbol, like ;sig, so they never fire inside a word. "
+                    + "{date}, {time} and {clipboard} are filled in. Needs Accessibility; "
+                    + "password fields are never watched.",
+                palette: palette,
+                dividing: true
+            )
+
+            if store.snippets.isEmpty {
+                Text("No snippets yet.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.vertical, 10)
+            }
+
+            ForEach($store.snippets) { $snippet in
+                SnippetRow(snippet: $snippet, palette: palette) {
+                    store.snippets.removeAll { $0.id == snippet.id }
+                }
+            }
+
+            Button {
+                store.snippets.append(Snippet(trigger: ";", text: ""))
+            } label: {
+                Text("+ Add Snippet")
+                    .font(.system(size: 12))
+                    .foregroundStyle(palette.textSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(palette.divider, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    )
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 12)
+        }
+    }
+}
+
+private struct SnippetRow: View {
+    @Binding var snippet: Snippet
+    let palette: Palette
+    let onRemove: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            TextField("Abbreviation", text: $snippet.trigger)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12, design: .monospaced))
+                .frame(width: 120)
+
+            VStack(alignment: .leading, spacing: 3) {
+                TextField("Text it expands to", text: $snippet.text, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+                    .lineLimit(1...5)
+                if !snippet.isUsable, !snippet.text.isEmpty || snippet.trigger.count > 1 {
+                    Text(snippet.trigger.count < Snippet.minimumTriggerLength
+                         ? "Abbreviations need at least two characters."
+                         : "Add the text it should expand to.")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(palette.danger)
+                }
+            }
+
+            Button(action: onRemove) {
+                Text("×")
+                    .font(.system(size: 15))
+                    .foregroundStyle(isHovering ? palette.danger : palette.textTertiary)
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovering = $0 }
+            .help("Delete this snippet")
+        }
+        .padding(.vertical, 6)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(palette.divider).frame(height: 1)
         }
     }
 }

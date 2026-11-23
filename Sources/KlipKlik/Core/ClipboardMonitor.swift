@@ -19,6 +19,16 @@ final class ClipboardMonitor {
     /// bounce straight back into the history as a "new" copy.
     private var selfWrittenChangeCounts: Set<Int> = []
 
+    /// Strips trackers from a copied link before it is recorded.
+    let linkCleaner = LinkCleaner()
+    /// Every copy that made it into history, after cleaning — the paste stack
+    /// collects from here.
+    var onCapture: ((ClipboardItem) -> Void)?
+    /// Every change to the pasteboard, ours included — features that react to
+    /// what is on the clipboard (Finder image paste) listen here instead of
+    /// polling it again.
+    var onPasteboardChange: (() -> Void)?
+
     init(store: HistoryStore) {
         self.store = store
         self.lastChangeCount = NSPasteboard.general.changeCount
@@ -55,6 +65,7 @@ final class ClipboardMonitor {
         let current = pasteboard.changeCount
         guard current != lastChangeCount else { return }
         lastChangeCount = current
+        defer { onPasteboardChange?() }
 
         if selfWrittenChangeCounts.remove(current) != nil { return }
 
@@ -63,8 +74,18 @@ final class ClipboardMonitor {
         let recent = frontmost.recent(within: interval)
         if recent.contains(where: { Settings.shared.isIgnored($0.bundleID) }) { return }
 
-        guard let item = ClipboardItem.capture(from: pasteboard, sourceApp: frontmost.current?.name)
-        else { return }
+        // Rewritten before capture, so history only ever holds the clean link.
+        // The rewrite moves the change count on; adopting it here keeps the
+        // next tick from treating our own write as another copy.
+        if Settings.shared.cleanLinks, let rewritten = linkCleaner.rewriteIfTracked(pasteboard) {
+            lastChangeCount = rewritten
+        }
+
+        guard let item = ClipboardItem.capture(
+            from: pasteboard,
+            sourceApp: frontmost.current?.name,
+            sourceBundleID: frontmost.current?.bundleID
+        ) else { return }
         if ProcessInfo.processInfo.environment["KLIPKLIK_DEBUG"] != nil {
             let line = "capture #\(current) kind=\(item.kind) title=\(item.title)"
                 + " fp=\(item.fingerprint) from=\(item.sourceApp ?? "—")"
@@ -72,5 +93,6 @@ final class ClipboardMonitor {
             FileHandle.standardError.write(line.data(using: .utf8)!)
         }
         store.insert(item)
+        onCapture?(item)
     }
 }

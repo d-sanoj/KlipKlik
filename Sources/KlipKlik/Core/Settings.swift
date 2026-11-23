@@ -44,6 +44,8 @@ enum AnchorMode: String, CaseIterable, Identifiable {
 enum ShelfTrigger: String, CaseIterable, Identifiable {
     /// A landing pad appears beside the pointer the moment any drag starts.
     case automatic
+    /// The landing pad appears only when the pointer is shaken mid-drag.
+    case shake
     /// Nothing appears on its own; shelves come from the menu or the hot key.
     case manual
 
@@ -51,8 +53,9 @@ enum ShelfTrigger: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .automatic: return "When a drag starts"
-        case .manual: return "Only from the menu or ⌥⌘S"
+        case .automatic: return "Any drag"
+        case .shake: return "Shake while dragging"
+        case .manual: return "Menu or ⌥⌘S"
         }
     }
 
@@ -61,10 +64,36 @@ enum ShelfTrigger: String, CaseIterable, Identifiable {
         case .automatic:
             return "Pick up any file and a drop target appears beside the pointer. "
                 + "It needs no permissions, and it goes away by itself if you drop elsewhere."
+        case .shake:
+            return "Drags stay quiet until you shake the pointer left and right a few times, "
+                + "then the drop target appears. Needs no permissions."
         case .manual:
             return "Nothing appears while you drag. Open a shelf first, then drop into it."
         }
     }
+}
+
+/// How long an unpinned item may stay in history, on top of the daily purge.
+enum HistoryAge: Int, CaseIterable, Identifiable {
+    case off = 0
+    case fifteenMinutes = 900
+    case oneHour = 3600
+    case fourHours = 14400
+    case twelveHours = 43200
+
+    var id: Int { rawValue }
+
+    var label: String {
+        switch self {
+        case .off: return "Until purge"
+        case .fifteenMinutes: return "15 min"
+        case .oneHour: return "1 hour"
+        case .fourHours: return "4 hours"
+        case .twelveHours: return "12 hours"
+        }
+    }
+
+    var interval: TimeInterval? { self == .off ? nil : TimeInterval(rawValue) }
 }
 
 final class Settings: ObservableObject {
@@ -86,6 +115,18 @@ final class Settings: ObservableObject {
         static let shelvesEnabled = "shelvesEnabled"
         static let shelfTrigger = "shelfTrigger"
         static let shelvesPersist = "shelvesPersist"
+        static let cleanLinks = "cleanLinks"
+        static let colorFormat = "colorFormat"
+        static let historyMaxAge = "historyMaxAge"
+        static let showSourceIcons = "showSourceIcons"
+        static let snippetsEnabled = "snippetsEnabled"
+        static let finderRenameKey = "finderRenameKey"
+        static let finderPasteImage = "finderPasteImage"
+        static let shelfKeepAfterDrag = "shelfKeepAfterDrag"
+        static let watchRemovedApps = "watchRemovedApps"
+        static let brewAutoCheck = "brewAutoCheck"
+        static let dockPreviews = "dockPreviews"
+        static let cacheCleanerSkipped = "cacheCleanerSkipped"
     }
 
     @Published var theme: ThemePreference {
@@ -208,6 +249,66 @@ final class Settings: ObservableObject {
         didSet { UserDefaults.standard.set(shelvesPersist, forKey: Key.shelvesPersist) }
     }
 
+    /// Strip tracking parameters from a copied link before it reaches history.
+    @Published var cleanLinks: Bool {
+        didSet { UserDefaults.standard.set(cleanLinks, forKey: Key.cleanLinks) }
+    }
+
+    /// What the eyedropper copies.
+    @Published var colorFormat: ColorFormat {
+        didSet { UserDefaults.standard.set(colorFormat.rawValue, forKey: Key.colorFormat) }
+    }
+
+    /// Unpinned items older than this leave history before the daily purge.
+    @Published var historyMaxAge: HistoryAge {
+        didSet { UserDefaults.standard.set(historyMaxAge.rawValue, forKey: Key.historyMaxAge) }
+    }
+
+    /// The copying app's icon at the start of each popup row.
+    @Published var showSourceIcons: Bool {
+        didSet { UserDefaults.standard.set(showSourceIcons, forKey: Key.showSourceIcons) }
+    }
+
+    /// Typed abbreviations expand into their saved text.
+    @Published var snippetsEnabled: Bool {
+        didSet { UserDefaults.standard.set(snippetsEnabled, forKey: Key.snippetsEnabled) }
+    }
+
+    /// F2 starts renaming the selected item in Finder.
+    @Published var finderRenameKey: Bool {
+        didSet { UserDefaults.standard.set(finderRenameKey, forKey: Key.finderRenameKey) }
+    }
+
+    /// ⌘V in Finder with a copied picture saves it as a PNG file there.
+    @Published var finderPasteImage: Bool {
+        didSet { UserDefaults.standard.set(finderPasteImage, forKey: Key.finderPasteImage) }
+    }
+
+    /// Leave items on a shelf after they are dragged out of it.
+    @Published var shelfKeepAfterDrag: Bool {
+        didSet { UserDefaults.standard.set(shelfKeepAfterDrag, forKey: Key.shelfKeepAfterDrag) }
+    }
+
+    /// Offer to clean up after an app disappears from Applications.
+    @Published var watchRemovedApps: Bool {
+        didSet { UserDefaults.standard.set(watchRemovedApps, forKey: Key.watchRemovedApps) }
+    }
+
+    /// Look for outdated Homebrew packages in the background twice a day.
+    @Published var brewAutoCheck: Bool {
+        didSet { UserDefaults.standard.set(brewAutoCheck, forKey: Key.brewAutoCheck) }
+    }
+
+    /// Hovering a Dock icon shows that app's windows.
+    @Published var dockPreviews: Bool {
+        didSet { UserDefaults.standard.set(dockPreviews, forKey: Key.dockPreviews) }
+    }
+
+    /// Paths the cache cleaner must never offer again.
+    @Published var cacheCleanerSkipped: [String] {
+        didSet { UserDefaults.standard.set(cacheCleanerSkipped, forKey: Key.cacheCleanerSkipped) }
+    }
+
     func isIgnored(_ bundleID: String?) -> Bool {
         guard let bundleID else { return false }
         return ignoredApps.contains(bundleID)
@@ -235,7 +336,19 @@ final class Settings: ObservableObject {
             Key.ignoredApps: [String](),
             Key.shelvesEnabled: true,
             Key.shelfTrigger: ShelfTrigger.automatic.rawValue,
-            Key.shelvesPersist: false
+            Key.shelvesPersist: false,
+            Key.cleanLinks: true,
+            Key.colorFormat: ColorFormat.hex.rawValue,
+            Key.historyMaxAge: HistoryAge.off.rawValue,
+            Key.showSourceIcons: true,
+            Key.snippetsEnabled: true,
+            Key.finderRenameKey: true,
+            Key.finderPasteImage: true,
+            Key.shelfKeepAfterDrag: false,
+            Key.watchRemovedApps: true,
+            Key.brewAutoCheck: true,
+            Key.dockPreviews: true,
+            Key.cacheCleanerSkipped: [String]()
         ])
 
         theme = ThemePreference(rawValue: defaults.string(forKey: Key.theme) ?? "") ?? .auto
@@ -255,6 +368,18 @@ final class Settings: ObservableObject {
         shelfTrigger = ShelfTrigger(rawValue: defaults.string(forKey: Key.shelfTrigger) ?? "")
             ?? .automatic
         shelvesPersist = defaults.bool(forKey: Key.shelvesPersist)
+        cleanLinks = defaults.bool(forKey: Key.cleanLinks)
+        colorFormat = ColorFormat(rawValue: defaults.string(forKey: Key.colorFormat) ?? "") ?? .hex
+        historyMaxAge = HistoryAge(rawValue: defaults.integer(forKey: Key.historyMaxAge)) ?? .off
+        showSourceIcons = defaults.bool(forKey: Key.showSourceIcons)
+        snippetsEnabled = defaults.bool(forKey: Key.snippetsEnabled)
+        finderRenameKey = defaults.bool(forKey: Key.finderRenameKey)
+        finderPasteImage = defaults.bool(forKey: Key.finderPasteImage)
+        shelfKeepAfterDrag = defaults.bool(forKey: Key.shelfKeepAfterDrag)
+        watchRemovedApps = defaults.bool(forKey: Key.watchRemovedApps)
+        brewAutoCheck = defaults.bool(forKey: Key.brewAutoCheck)
+        dockPreviews = defaults.bool(forKey: Key.dockPreviews)
+        cacheCleanerSkipped = defaults.stringArray(forKey: Key.cacheCleanerSkipped) ?? []
     }
 
     func applyAppearance() {

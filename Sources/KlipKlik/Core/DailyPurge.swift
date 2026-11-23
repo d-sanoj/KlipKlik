@@ -55,6 +55,10 @@ final class DailyPurge {
     /// Also worth calling right before showing the popup, so the user never sees
     /// entries that should already have been purged.
     func checkAndPurge() {
+        // The age limit rides the same sweep: five minutes is fine-grained
+        // enough for a limit measured in a quarter hour or more.
+        store.pruneExpired()
+
         let boundary = Self.mostRecentBoundary(
             atOrBefore: Date(),
             hour: Settings.shared.purgeHour,
