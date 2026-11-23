@@ -66,12 +66,20 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 # creates is used when this Mac has one.
 IDENTITY="${KLIPKLIK_SIGN_IDENTITY:-KlipKlik Local Signing}"
 
+#
+# Always with the hardened runtime, which notarization requires: signing with
+# it from the start means anything it would break shows up in everyday builds,
+# not on release day. The entitlements file declares the one thing the
+# hardened runtime would otherwise block — Apple Events to Finder.
+ENTITLEMENTS="$ROOT/Resources/KlipKlik.entitlements"
+SIGN_FLAGS=(--force --options runtime --entitlements "$ENTITLEMENTS")
+
 if [ -n "$IDENTITY" ] && security find-identity -v -p codesigning | grep -qF "$IDENTITY"; then
-    echo "==> Signing as '$IDENTITY'"
-    codesign --force --sign "$IDENTITY" "$APP"
+    echo "==> Signing as '$IDENTITY' (hardened runtime)"
+    codesign "${SIGN_FLAGS[@]}" --sign "$IDENTITY" "$APP"
 else
-    echo "==> Signing (ad-hoc)"
-    codesign --force --sign - "$APP"
+    echo "==> Signing (ad-hoc, hardened runtime)"
+    codesign "${SIGN_FLAGS[@]}" --sign - "$APP"
 fi
 
 echo "==> Built $APP"

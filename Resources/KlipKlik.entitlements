@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for the hardened runtime, which notarization requires.
+
+  The hardened runtime blocks Apple Events unless the app declares that it
+  sends them. KlipKlik asks Finder which folder is open (pasting a picture as
+  a file) and what is selected (sending it to a shelf), so it needs this one.
+  macOS still asks the user once before KlipKlik may talk to Finder; the
+  wording comes from NSAppleEventsUsageDescription in Info.plist.
+
+  Nothing else is needed: KlipKlik is not sandboxed, and Accessibility,
+  Screen Recording and Full Disk Access are granted by the user, not declared.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+</dict>
+</plist>

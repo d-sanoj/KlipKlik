@@ -230,6 +230,10 @@ each one its own **Open Settings…** and **Reset permission** button.
 > certificate — `build_app.sh` then signs every build with it, so grants
 > survive rebuilds — or set `KLIPKLIK_SIGN_IDENTITY` to a real signing
 > identity. Screen Recording additionally needs a relaunch to take effect.
+>
+> Every build is signed with the hardened runtime and
+> `Resources/KlipKlik.entitlements`, as notarization requires. The one
+> entitlement lets KlipKlik send Apple Events to Finder.
 
 ## Development
 
