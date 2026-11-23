@@ -81,6 +81,18 @@ struct GeneralPane: View {
             }
 
             Section {
+                Picker(selection: $settings.scrollCaptureAction) {
+                    ForEach(ScrollCaptureAction.allCases) { Text($0.label).tag($0) }
+                } label: {
+                    Text("When a scrolling screenshot finishes")
+                    Text("Always full sharpness. Copied pictures stay in clipboard history, "
+                        + "so an earlier one is never lost.")
+                }
+            } header: {
+                Text("Screenshots")
+            }
+
+            Section {
                 Toggle("Open KlipKlik at login", isOn: $settings.launchAtLogin)
                 if let error = settings.launchAtLoginError {
                     Text(error).foregroundStyle(.red).font(.callout)

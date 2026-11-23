@@ -73,6 +73,22 @@ enum ShelfTrigger: String, CaseIterable, Identifiable {
     }
 }
 
+/// What happens when a scrolling screenshot finishes.
+enum ScrollCaptureAction: String, CaseIterable, Identifiable {
+    case copy, save, copyAndSave, window
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .copy: return "Copy to Clipboard"
+        case .save: return "Save to Desktop"
+        case .copyAndSave: return "Copy and Save to Desktop"
+        case .window: return "Show in a Window"
+        }
+    }
+}
+
 /// How long an unpinned item may stay in history, on top of the daily purge.
 enum HistoryAge: Int, CaseIterable, Identifiable {
     case off = 0
@@ -126,6 +142,7 @@ final class Settings: ObservableObject {
         static let watchRemovedApps = "watchRemovedApps"
         static let brewAutoCheck = "brewAutoCheck"
         static let cacheCleanerSkipped = "cacheCleanerSkipped"
+        static let scrollCaptureAction = "scrollCaptureAction"
     }
 
     @Published var theme: ThemePreference {
@@ -298,6 +315,11 @@ final class Settings: ObservableObject {
         didSet { UserDefaults.standard.set(brewAutoCheck, forKey: Key.brewAutoCheck) }
     }
 
+    /// What a finished scrolling screenshot does: copied, by default.
+    @Published var scrollCaptureAction: ScrollCaptureAction {
+        didSet { UserDefaults.standard.set(scrollCaptureAction.rawValue, forKey: Key.scrollCaptureAction) }
+    }
+
     /// Paths the cache cleaner must never offer again.
     @Published var cacheCleanerSkipped: [String] {
         didSet { UserDefaults.standard.set(cacheCleanerSkipped, forKey: Key.cacheCleanerSkipped) }
@@ -341,7 +363,8 @@ final class Settings: ObservableObject {
             Key.shelfKeepAfterDrag: false,
             Key.watchRemovedApps: true,
             Key.brewAutoCheck: true,
-            Key.cacheCleanerSkipped: [String]()
+            Key.cacheCleanerSkipped: [String](),
+            Key.scrollCaptureAction: ScrollCaptureAction.copy.rawValue
         ])
 
         theme = ThemePreference(rawValue: defaults.string(forKey: Key.theme) ?? "") ?? .auto
@@ -372,6 +395,9 @@ final class Settings: ObservableObject {
         watchRemovedApps = defaults.bool(forKey: Key.watchRemovedApps)
         brewAutoCheck = defaults.bool(forKey: Key.brewAutoCheck)
         cacheCleanerSkipped = defaults.stringArray(forKey: Key.cacheCleanerSkipped) ?? []
+        scrollCaptureAction = ScrollCaptureAction(
+            rawValue: defaults.string(forKey: Key.scrollCaptureAction) ?? ""
+        ) ?? .copy
     }
 
     func applyAppearance() {

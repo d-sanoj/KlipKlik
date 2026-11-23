@@ -119,7 +119,36 @@ final class ScrollCapture {
                                 + "when you scroll it.")
             return
         }
-        ScrollResultWindow.show(image)
+        // Pixels per point of the capture: 2 on a Retina screen. Carried into
+        // every copy and file so the picture keeps its true size and sharpness.
+        let scale = CGFloat(image.width) / rect.width
+        Self.deliver(image, scale: scale)
+    }
+
+    /// Does what Settings asks for with a finished capture — by default just
+    /// copies it, with a brief note to say so.
+    private static func deliver(_ image: CGImage, scale: CGFloat) {
+        let size = "\(image.width.formatted()) × \(image.height.formatted()) px"
+        switch Settings.shared.scrollCaptureAction {
+        case .copy:
+            ScreenshotOutput.copy(image, scale: scale) { copied in
+                CaptureToast.show(copied ? "Copied to Clipboard" : "Couldn't Copy", detail: size)
+            }
+        case .save:
+            ScreenshotOutput.saveToDesktop(image, scale: scale) { url in
+                CaptureToast.show(url == nil ? "Couldn't Save" : "Saved to Desktop",
+                                  detail: url?.lastPathComponent ?? size)
+            }
+        case .copyAndSave:
+            ScreenshotOutput.copy(image, scale: scale) { _ in
+                ScreenshotOutput.saveToDesktop(image, scale: scale) { url in
+                    CaptureToast.show(url == nil ? "Copied — Couldn't Save" : "Copied and Saved to Desktop",
+                                      detail: size)
+                }
+            }
+        case .window:
+            ScrollResultWindow.show(image, scale: scale)
+        }
     }
 
     @MainActor

@@ -98,9 +98,10 @@ final class ScrollResultWindow: NSWindowController, NSWindowDelegate {
     private static var open: [ScrollResultWindow] = []
 
     private let image: CGImage
+    private let scale: CGFloat
 
-    static func show(_ image: CGImage) {
-        let controller = ScrollResultWindow(image: image)
+    static func show(_ image: CGImage, scale: CGFloat) {
+        let controller = ScrollResultWindow(image: image, scale: scale)
         open.append(controller)
         controller.copyToClipboard()
         NSApp.setActivationPolicy(.regular)
@@ -108,8 +109,9 @@ final class ScrollResultWindow: NSWindowController, NSWindowDelegate {
         controller.window?.makeKeyAndOrderFront(nil)
     }
 
-    private init(image: CGImage) {
+    private init(image: CGImage, scale: CGFloat) {
         self.image = image
+        self.scale = scale
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 640, height: 720),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -124,6 +126,7 @@ final class ScrollResultWindow: NSWindowController, NSWindowDelegate {
 
         let hosting = NSHostingController(rootView: ScrollResultView(
             image: image,
+            scale: scale,
             onCopy: { [weak self] in self?.copyToClipboard() },
             onSave: { [weak self] in self?.save() },
             onFloat: { [weak self] in self?.float() }
@@ -135,59 +138,32 @@ final class ScrollResultWindow: NSWindowController, NSWindowDelegate {
 
     required init?(coder: NSCoder) { nil }
 
-    /// At the screen's own scale, so a Retina capture floats at its real size.
+    /// At the capture's own scale, so it floats at its real size.
     private var nsImage: NSImage {
-        let scale = NSScreen.main?.backingScaleFactor ?? 2
-        return NSImage(cgImage: image, size: NSSize(width: CGFloat(image.width) / scale,
-                                                     height: CGFloat(image.height) / scale))
+        NSImage(cgImage: image, size: NSSize(width: CGFloat(image.width) / scale,
+                                             height: CGFloat(image.height) / scale))
     }
 
-    /// As PNG only: a TIFF of a picture this tall would be hundreds of
-    /// megabytes. History records it like any other copy.
     func copyToClipboard() {
-        let image = image
-        DispatchQueue.global(qos: .userInitiated).async {
-            let png = Self.encode(image, as: .png)
-            DispatchQueue.main.async {
-                guard let png else { return }
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setData(png, forType: .png)
-            }
-        }
+        ScreenshotOutput.copy(image, scale: scale) { _ in }
     }
 
     private func save() {
         guard let window else { return }
         let panel = NSSavePanel()
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-        panel.nameFieldStringValue = "Scrolling Screenshot \(formatter.string(from: Date())).png"
+        panel.nameFieldStringValue = ScreenshotOutput.defaultName()
         panel.allowedContentTypes = [.png, .jpeg, .heic]
         panel.directoryURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-        panel.beginSheetModal(for: window) { [image] response in
+        panel.beginSheetModal(for: window) { [image, scale] response in
             guard response == .OK, let url = panel.url else { return }
-            let type = UTType(filenameExtension: url.pathExtension) ?? .png
-            DispatchQueue.global(qos: .userInitiated).async {
-                guard let data = Self.encode(image, as: type) else { return }
-                try? data.write(to: url)
-                DispatchQueue.main.async { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+            ScreenshotOutput.save(image, scale: scale, to: url) { saved in
+                if let saved { NSWorkspace.shared.activateFileViewerSelecting([saved]) }
             }
         }
     }
 
     private func float() {
         FloatingCards.shared.float(image: nsImage)
-    }
-
-    private static func encode(_ image: CGImage, as type: UTType) -> Data? {
-        let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil)
-        else { return nil }
-        let options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: 0.85]
-        CGImageDestinationAddImage(destination, image, options as CFDictionary)
-        return CGImageDestinationFinalize(destination) ? data as Data : nil
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -200,6 +176,7 @@ final class ScrollResultWindow: NSWindowController, NSWindowDelegate {
 
 private struct ScrollResultView: View {
     let image: CGImage
+    let scale: CGFloat
     let onCopy: () -> Void
     let onSave: () -> Void
     let onFloat: () -> Void
@@ -208,7 +185,7 @@ private struct ScrollResultView: View {
 
     var body: some View {
         ScrollView([.vertical]) {
-            Image(decorative: image, scale: 2)
+            Image(decorative: image, scale: scale)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(maxWidth: .infinity)
