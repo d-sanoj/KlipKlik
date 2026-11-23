@@ -65,7 +65,7 @@ it launches without the `xattr` step.
 
 ### Uninstall
 
-**Settings ▸ Storage ▸ Uninstall KlipKlik…** revokes both permissions, removes
+**Settings ▸ History & Data ▸ Uninstall KlipKlik…** revokes both permissions, removes
 the login item, and deletes every stored setting, then offers to move the app to
 the Trash. Dragging the app to the Trash on its own leaves the privacy grants
 behind, and macOS matches those by bundle identifier — so a later reinstall
@@ -183,7 +183,7 @@ do not survive quitting by default, and why anything dragged in from Finder is
 referenced rather than copied — the case that would stage bytes is the
 uncommon one.
 
-**Settings ▸ Storage** shows all four figures — memory, cache, archive, and
+**Settings ▸ History & Data** shows all four figures — memory, cache, archive, and
 bytes staged for shelves — and clears each independently.
 
 ## Shortcuts

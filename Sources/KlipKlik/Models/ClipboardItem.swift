@@ -88,6 +88,9 @@ struct ClipboardItem: Identifiable, Equatable, Codable {
     /// `write(to:)` knows to rebuild it for anything that asks. See
     /// `compacting(_:)`.
     var restoresTIFF: Bool = false
+    /// Words read out of a copied picture, so searching history finds a
+    /// screenshot by what it says. Filled in shortly after the copy.
+    var recognizedText: String?
     /// When the item was last copied again, which moves it back to the top.
     /// Only the history age limit reads it; the row still shows `createdAt`.
     var touchedAt: Date?

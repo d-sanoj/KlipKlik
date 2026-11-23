@@ -92,7 +92,17 @@ final class PopupController: NSObject, NSWindowDelegate {
         viewModel.onOpenPreferences = { [weak self] in self?.onOpenPreferences?() }
         viewModel.onPickColor = { [weak self] in self?.pickColor() }
         viewModel.onGrabText = { [weak self] in self?.grabText() }
+        viewModel.onScrollCapture = { [weak self] in
+            // Out of the way first, or the popup would be part of the page.
+            self?.hide()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { ScrollCapture.shared.start() }
+        }
         viewModel.onPreview = { [weak self] item in self?.togglePreview(item) }
+        viewModel.onFloat = { [weak self] item in
+            guard let self else { return }
+            hide()
+            FloatingCards.shared.float(viewModel.store.materialized(item))
+        }
         viewModel.onCopyText = { [weak self] text in
             self?.hide()
             let pasteboard = NSPasteboard.general
@@ -433,6 +443,11 @@ final class PopupController: NSObject, NSWindowDelegate {
             viewModel.previewSelected()
             return true
 
+        // Tab and ⇧Tab step through the type filters.
+        case kVK_Tab:
+            viewModel.cycleKindFilter(by: shift ? -1 : 1)
+            return true
+
         case kVK_DownArrow:
             viewModel.moveSelection(by: 1)
             return true
@@ -452,6 +467,10 @@ final class PopupController: NSObject, NSWindowDelegate {
 
         case kVK_ANSI_S where option:
             viewModel.addSelectedToShelf()
+            return true
+
+        case kVK_ANSI_F where option:
+            viewModel.floatSelected()
             return true
 
         case kVK_Delete where command && option:

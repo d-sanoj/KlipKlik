@@ -68,6 +68,7 @@ struct SettingsView: View {
             case .cache: CacheView(model: tools.cache)
             case .homebrew: HomebrewView()
             case .ports: PortsView(model: tools.ports)
+            case .fileUsage: FileUsageView(model: tools.fileUsage)
             }
         }
         .navigationTitle(navigation.page.title)

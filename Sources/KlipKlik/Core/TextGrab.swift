@@ -224,6 +224,12 @@ enum TextGrab {
             .filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 
+    /// The words in a picture, laid out as they appear. Shared with history,
+    /// which reads copied screenshots so they can be found by search.
+    static func readText(in image: CGImage) -> String? {
+        recognizeText(in: image)
+    }
+
     private static func recognizeText(in image: CGImage) -> String? {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate

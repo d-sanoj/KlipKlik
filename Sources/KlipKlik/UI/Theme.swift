@@ -21,7 +21,9 @@ enum Metrics {
     /// Fixed-width trailing slot the timestamp and the hover actions share.
     static let trailingSlotWidth: CGFloat = 52
 
-    static let headerHeight: CGFloat = 45
+    /// Search field plus the row of type filters beneath it.
+    static let headerHeight: CGFloat = 45 + filterRowHeight
+    static let filterRowHeight: CGFloat = 28
     static let footerHeight: CGFloat = 36
 
     static var maxListHeight: CGFloat {

@@ -8,7 +8,7 @@ import SwiftUI
 enum SettingsPage: String, CaseIterable, Identifiable {
     case general, snippets, ignored, storage
     case shelf, finder
-    case uninstall, leftovers, cache, homebrew, ports
+    case uninstall, leftovers, cache, homebrew, ports, fileUsage
     case appearance, shortcuts
 
     enum Group: String, CaseIterable, Identifiable {
@@ -28,7 +28,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .general, .snippets, .ignored, .storage: return .clipboard
         case .shelf, .finder: return .workspace
-        case .uninstall, .leftovers, .cache, .homebrew, .ports: return .tools
+        case .uninstall, .leftovers, .cache, .homebrew, .ports, .fileUsage: return .tools
         case .appearance, .shortcuts: return .app
         }
     }
@@ -38,7 +38,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .general: return "General"
         case .snippets: return "Snippets"
         case .ignored: return "Ignored Apps"
-        case .storage: return "Storage"
+        case .storage: return "History & Data"
         case .shelf: return "Shelf"
         case .finder: return "Finder"
         case .uninstall: return "Uninstall Cleaner"
@@ -46,6 +46,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .cache: return "Cache Cleaner"
         case .homebrew: return "Homebrew"
         case .ports: return "Ports"
+        case .fileUsage: return "What's Using It"
         case .appearance: return "Appearance"
         case .shortcuts: return "Shortcuts & Permissions"
         }
@@ -57,10 +58,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .general: return "How copying and pasting behave, and how long history is kept."
         case .snippets: return "Short abbreviations that expand into text you type often."
         case .ignored: return "Apps whose copies are never recorded."
-        case .storage: return "What KlipKlik keeps, where, and how to clear it."
+        case .storage: return "Your clipboard history: what KlipKlik keeps, where, and clearing it. Not your Mac's disk space — that is Cache Cleaner."
         case .shelf: return "Floating trays you drop files into and drag back out."
         case .finder: return "Extra keys for Finder."
-        case .uninstall, .leftovers, .cache, .homebrew, .ports: return ""
+        case .uninstall, .leftovers, .cache, .homebrew, .ports, .fileUsage: return ""
         case .appearance: return "How the popup looks."
         case .shortcuts: return "Every key KlipKlik answers to, and the permissions behind them."
         }
@@ -71,7 +72,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .general: return "gearshape.fill"
         case .snippets: return "text.badge.plus"
         case .ignored: return "eye.slash.fill"
-        case .storage: return "internaldrive.fill"
+        case .storage: return "clock.arrow.circlepath"
         case .shelf: return "tray.2.fill"
         case .finder: return "folder.fill"
         case .uninstall: return "trash.fill"
@@ -79,6 +80,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .cache: return "sparkles"
         case .homebrew: return "shippingbox.fill"
         case .ports: return "network"
+        case .fileUsage: return "lock.doc.fill"
         case .appearance: return "paintpalette.fill"
         case .shortcuts: return "keyboard.fill"
         }
@@ -98,6 +100,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .cache: return Color(hex: 0x34C759)
         case .homebrew: return Color(hex: 0xA2845E)
         case .ports: return Color(hex: 0x32ADE6)
+        case .fileUsage: return Color(hex: 0xAF52DE)
         case .appearance: return Color(hex: 0xFF2D55)
         case .shortcuts: return Color(hex: 0x5856D6)
         }
@@ -113,7 +116,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .general: return ["paste", "strip", "format", "link", "tracking", "history", "login", "purge"]
         case .snippets: return ["expand", "abbreviation", "text", "typing"]
         case .ignored: return ["password", "exclude", "private"]
-        case .storage: return ["clear", "pinned", "disk", "memory", "uninstall klipklik"]
+        case .storage: return ["storage", "clear", "pinned", "history", "data", "memory", "uninstall klipklik"]
         case .shelf: return ["drag", "drop", "shake", "tray", "files"]
         case .finder: return ["cut", "rename", "f2", "picture", "png", "paste"]
         case .uninstall: return ["remove", "delete", "app", "trash", "removed", "leftover"]
@@ -121,6 +124,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .cache: return ["clean", "space", "disk", "chatgpt", "claude", "xcode", "npm"]
         case .homebrew: return ["brew", "update", "upgrade", "cask", "formula", "uninstall", "packages"]
         case .ports: return ["port", "kill", "process", "server", "localhost"]
+        case .fileUsage: return ["eject", "busy", "in use", "open", "lock", "disk", "volume", "file", "delete"]
         case .appearance: return ["theme", "dark", "light", "glass", "colour", "color", "icons"]
         case .shortcuts: return ["keys", "hotkey", "accessibility", "screen recording", "permission"]
         }
@@ -160,6 +164,6 @@ final class SettingsNavigation: ObservableObject {
         page = next
         isStepping = false
     }
-    /// The tool pages' scans, kept while the window is closed.
-    let tools = ToolsModel()
+    /// The tools' state, shared with the menu bar submenus.
+    let tools = ToolsModel.shared
 }

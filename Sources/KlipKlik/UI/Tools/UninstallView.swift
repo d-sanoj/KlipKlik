@@ -86,8 +86,21 @@ final class UninstallModel: ObservableObject {
 
     func select(_ app: AppBundle) {
         message = nil
+        removeAfterScan = nil
         scan(.app(app))
     }
+
+    /// The menu bar's "Uninstall App ▸ <app>": find its files, then ask once
+    /// with the exact ones ticked — or hand over to Settings to review.
+    func uninstallFromMenu(_ app: AppBundle, review: @escaping () -> Void) {
+        guard !isRemoving else { return }
+        message = nil
+        removeAfterScan = (app.id, review)
+        scan(.app(app))
+    }
+
+    /// Set while a menu-started uninstall waits for its scan.
+    private var removeAfterScan: (id: String, review: () -> Void)?
 
     /// An app dropped onto the window, wherever it lives.
     func select(droppedURL url: URL) {
@@ -134,6 +147,10 @@ final class UninstallModel: ObservableObject {
                 leftovers = found
                 checked = Set(found.filter { $0.strength == .exact }.map(\.id))
                 isScanning = false
+                if let pending = removeAfterScan, case .app(let app) = target, app.id == pending.id {
+                    removeAfterScan = nil
+                    removeChecked(fromMenu: pending.review)
+                }
             }
         }
     }
@@ -144,7 +161,10 @@ final class UninstallModel: ObservableObject {
 
     /// Confirms, quits the app if it is running, and moves everything ticked
     /// to the Trash.
-    func removeChecked() {
+    ///
+    /// - Parameter fromMenu: set when started from the menu bar: the question
+    ///   then offers "Review in Settings…", and the outcome is reported.
+    func removeChecked(fromMenu review: (() -> Void)? = nil) {
         guard let target, !isRemoving else { return }
         let chosen = leftovers.filter { checked.contains($0.id) }
         guard !chosen.isEmpty else { return }
@@ -162,16 +182,28 @@ final class UninstallModel: ObservableObject {
             + (needsAdmin ? "\n\nSome items belong to the system, so macOS will ask for your password." : "")
         alert.addButton(withTitle: removesApp ? "Uninstall" : "Move to Trash")
         alert.addButton(withTitle: "Cancel")
-        ToolsAlert.confirm(alert) { [weak self] confirmed in
-            guard let self, confirmed else { return }
+        if review != nil {
+            let maybes = leftovers.count - chosen.count
+            alert.informativeText += maybes > 0
+                ? "\n\n\(maybes) more item\(maybes == 1 ? "" : "s") might belong to it; review them in Settings."
+                : ""
+            alert.addButton(withTitle: "Review in Settings…")
+        }
+        ToolsAlert.ask(alert) { [weak self] response in
+            guard let self else { return }
+            if response == .alertThirdButtonReturn {
+                review?()
+                return
+            }
+            guard response == .alertFirstButtonReturn else { return }
             quitIfRunning(bundleID: target.bundleID, name: target.name) { [weak self] ready in
                 guard ready else { return }
-                self?.perform(chosen, target: target, removesApp: removesApp)
+                self?.perform(chosen, target: target, removesApp: removesApp, announce: review != nil)
             }
         }
     }
 
-    private func perform(_ chosen: [Leftover], target: Target, removesApp: Bool) {
+    private func perform(_ chosen: [Leftover], target: Target, removesApp: Bool, announce: Bool) {
         isRemoving = true
         message = nil
         AppRemover.remove(chosen, bundleID: target.bundleID) { [weak self] report in
@@ -181,7 +213,11 @@ final class UninstallModel: ObservableObject {
             let remaining = Set(leftovers.map(\.id))
             checked = checked.intersection(remaining)
             message = Self.summary(report, name: target.name)
-            ToolsAlert.explainProtected(report.protected)
+            if !report.protected.isEmpty {
+                ToolsAlert.explainProtected(report.protected)
+            } else if announce, let message {
+                ToolsAlert.inform(removesApp ? "\(target.name) Uninstalled" : "Leftovers Removed", message)
+            }
             if removesApp, report.removed.contains(where: { url in
                 chosen.contains { $0.kind == .appBundle && $0.url == url }
             }) {

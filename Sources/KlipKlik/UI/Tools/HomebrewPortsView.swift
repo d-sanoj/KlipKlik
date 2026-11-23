@@ -324,58 +324,13 @@ final class PortsModel: ObservableObject {
     }
 
     func stop(_ port: ListeningPort) {
-        let alert = NSAlert()
-        alert.messageText = "Stop \(port.command) (PID \(port.pid))?"
-        alert.informativeText = "It is listening on port \(port.port). Unsaved work in it may be lost."
-        alert.addButton(withTitle: "Stop")
-        alert.addButton(withTitle: "Cancel")
-        ToolsAlert.confirm(alert) { [weak self] confirmed in
-            if confirmed { self?.send(port, force: false) }
-        }
-    }
-
-    private func send(_ port: ListeningPort, force: Bool) {
-        Ports.stop(pid: port.pid, force: force) { [weak self] result in
-            self?.handle(result, for: port, wasForced: force)
-        }
-    }
-
-    private func handle(_ result: Ports.StopResult, for port: ListeningPort, wasForced: Bool) {
-        switch result {
-        case .stopped:
-            message = "Stopped \(port.command). Port \(port.port) is free."
-            refresh()
-        case .stillRunning:
-            guard !wasForced else {
-                message = "\(port.command) is still running."
-                return
-            }
-            let alert = NSAlert()
-            alert.messageText = "\(port.command) did not stop"
-            alert.informativeText = "Force it to quit? It gets no chance to clean up."
-            alert.addButton(withTitle: "Force Quit")
-            alert.addButton(withTitle: "Cancel")
-            ToolsAlert.confirm(alert) { [weak self] confirmed in
-                if confirmed { self?.send(port, force: true) }
-            }
-        case .notPermitted:
-            let alert = NSAlert()
-            alert.messageText = "\(port.command) belongs to another user"
-            alert.informativeText = "Stopping it needs an administrator password."
-            alert.addButton(withTitle: "Stop as Administrator")
-            alert.addButton(withTitle: "Cancel")
-            ToolsAlert.confirm(alert) { [weak self] confirmed in
-                guard confirmed else { return }
-                Ports.stopAsAdministrator(pid: port.pid) { [weak self] result in
-                    if case .notPermitted = result {
-                        self?.message = "Not stopped: no password given."
-                    } else {
-                        self?.handle(result, for: port, wasForced: true)
-                    }
-                }
-            }
-        case .failed(let text):
-            message = text
+        ProcessStopper.stop(
+            pid: port.pid, name: port.command,
+            reason: "It is listening on port \(port.port).",
+            stoppedMessage: "Stopped \(port.command). Port \(port.port) is free."
+        ) { [weak self] message, stopped in
+            self?.message = message
+            if stopped { self?.refresh() }
         }
     }
 }

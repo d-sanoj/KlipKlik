@@ -23,6 +23,7 @@ struct ItemRow: View {
     /// Copies a colour item in another notation. See `colorMenu`.
     var onCopyColor: (ColorFormat) -> Void = { _ in }
     var onPreview: () -> Void = {}
+    var onFloat: () -> Void = {}
 
     var body: some View {
         HStack(spacing: Metrics.rowSpacing) {
@@ -67,6 +68,7 @@ struct ItemRow: View {
         Button("Paste") { onActivate(false) }
         Button(item.pinned ? "Unpin" : "Pin", action: onTogglePin)
         Button("Preview", action: onPreview)
+        Button("Float on Screen", action: onFloat)
         if canShelve {
             Divider()
             Button("Add to Shelf", action: onAddToShelf)

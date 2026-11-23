@@ -143,6 +143,47 @@ enum AppRemover {
         case failed(String)
     }
 
+    struct AdminError: LocalizedError {
+        let errorDescription: String?
+    }
+
+    /// Like `runAsAdministrator`, handing back what the script printed.
+    static func runAsAdministratorCapturing(_ shellScript: String) -> Result<String, Error> {
+        let escaped = shellScript
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", "do shell script \"\(escaped)\" with administrator privileges"]
+        let output = Pipe()
+        let errors = Pipe()
+        process.standardOutput = output
+        process.standardError = errors
+        do {
+            try process.run()
+        } catch {
+            return .failure(error)
+        }
+        var errorData = Data()
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global().async {
+            errorData = errors.fileHandleForReading.readDataToEndOfFile()
+            group.leave()
+        }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        group.wait()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            let message = String(data: errorData, encoding: .utf8) ?? ""
+            return .failure(AdminError(errorDescription: message.contains("-128")
+                ? "No administrator password given." : message))
+        }
+        // `do shell script` turns line endings into carriage returns.
+        let text = (String(data: data, encoding: .utf8) ?? "").replacingOccurrences(of: "\r", with: "\n")
+        return .success(text)
+    }
+
     /// Runs a shell script as root behind the standard password prompt.
     static func runAsAdministrator(_ shellScript: String) -> AdminResult {
         // AppleScript string literal: backslashes first, then quotes.

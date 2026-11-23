@@ -8,6 +8,7 @@ final class CacheModel: ObservableObject {
     @Published private(set) var isCleaning = false
     @Published var checked: Set<String> = []
     @Published var message: String?
+    @Published private(set) var lastScanned: Date?
 
     var selectedBytes: Int64 {
         items.filter { checked.contains($0.id) }.reduce(0) { $0 + $1.size }
@@ -35,8 +36,29 @@ final class CacheModel: ObservableObject {
                 checked = Set(found.filter(\.preselected).map(\.id))
                 isScanning = false
                 hasScanned = true
+                lastScanned = Date()
             }
         }
+    }
+
+    /// Scans unless a scan finished in the last couple of minutes — the menu
+    /// calls this every time it opens.
+    func scanIfStale(maxAge: TimeInterval = 120) {
+        guard !isScanning, !isCleaning else { return }
+        if let lastScanned, Date().timeIntervalSince(lastScanned) < maxAge { return }
+        scan()
+    }
+
+    /// What one click in the menu clears: the items ticked by default — never
+    /// developer caches, never an app that is open.
+    var safeItems: [CacheItem] { items.filter(\.preselected) }
+    var safeBytes: Int64 { safeItems.reduce(0) { $0 + $1.size } }
+
+    /// The menu's "Clear Safe Caches": the default selection, confirmed, then
+    /// reported, since the menu is gone by the time it finishes.
+    func cleanSafe() {
+        checked = Set(safeItems.map(\.id))
+        clean(announce: true)
     }
 
     func toggle(_ item: CacheItem) {
@@ -57,7 +79,7 @@ final class CacheModel: ObservableObject {
         checked.remove(item.id)
     }
 
-    func clean() {
+    func clean(announce: Bool = false) {
         let chosen = items.filter { checked.contains($0.id) }
         guard !chosen.isEmpty, !isCleaning else { return }
 
@@ -72,11 +94,11 @@ final class CacheModel: ObservableObject {
         alert.addButton(withTitle: "Cancel")
         ToolsAlert.confirm(alert) { [weak self] confirmed in
             guard confirmed else { return }
-            self?.perform(chosen)
+            self?.perform(chosen, announce: announce)
         }
     }
 
-    private func perform(_ chosen: [CacheItem]) {
+    private func perform(_ chosen: [CacheItem], announce: Bool) {
         isCleaning = true
         CacheScanner.clean(chosen) { [weak self] report in
             guard let self else { return }
@@ -88,6 +110,7 @@ final class CacheModel: ObservableObject {
             let cleanedIDs = Set(chosen.map(\.id))
             items.removeAll { cleanedIDs.contains($0.id) }
             checked.subtract(cleanedIDs)
+            if announce, let message { ToolsAlert.inform("Caches Cleared", message) }
         }
     }
 }

@@ -161,3 +161,31 @@ import Testing
         #expect(!AppRemover.isPrivacyRefusal(busy))
     }
 }
+
+@Suite struct LsofFileParserTests {
+    @Test func groupsFilesByProcess() {
+        let text = """
+        p501
+        cPreview
+        Lsanoj
+        f4
+        n/Volumes/Disk/photo.png
+        f5
+        n/Volumes/Disk/notes.txt
+        f6
+        n/Volumes/Disk/photo.png
+        p77
+        cmds_stores
+        Lroot
+        n/Volumes/Disk/.Spotlight-V100
+        p999
+        cKlipKlik
+        n/Volumes/Disk
+        """
+        let holders = LsofFileParser.parse(text, excluding: 999)
+        #expect(holders.map(\.pid) == [501, 77])
+        #expect(holders[0].command == "Preview")
+        #expect(holders[0].files == ["/Volumes/Disk/photo.png", "/Volumes/Disk/notes.txt"])
+        #expect(holders[1].user == "root")
+    }
+}

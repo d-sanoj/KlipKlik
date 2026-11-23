@@ -87,7 +87,7 @@ enum InstalledApps {
             return "\(app.name) comes with macOS. Remove Apple apps from Finder or System Settings."
         }
         if app.bundleID == Bundle.main.bundleIdentifier {
-            return "Use Settings ▸ Storage ▸ Uninstall KlipKlik to remove KlipKlik itself."
+            return "Use Settings ▸ History & Data ▸ Uninstall KlipKlik to remove KlipKlik itself."
         }
         if (try? app.url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true {
             return "\(app.name) is a link to an app somewhere else."

@@ -254,7 +254,7 @@ struct IgnoredAppsPane: View {
     }
 }
 
-// MARK: - Storage
+// MARK: - History & Data
 
 struct StoragePane: View {
     @ObservedObject var store: HistoryStore
@@ -527,7 +527,8 @@ struct ShortcutsPane: View {
         ("Clipboard history", "⌘ ⌘"),
         ("Clipboard history, alternate", "⇧ ⌘ C"),
         ("New shelf", "⌥ ⌘ S"),
-        ("Start or stop the paste stack", "⌃ ⌥ ⌘ C")
+        ("Start or stop the paste stack", "⌃ ⌥ ⌘ C"),
+        ("Stop a scrolling screenshot", "esc")
     ]
 
     private static let finder: [(String, String)] = [
@@ -542,6 +543,8 @@ struct ShortcutsPane: View {
         ("Paste with the opposite formatting", "⌥ ⇧ ↩"),
         ("Paste item 1 to 9", "⌘ 1…9"),
         ("Preview the whole item", "Space"),
+        ("Float on screen", "⌥ F"),
+        ("Filter by type", "⇥"),
         ("Pin or unpin", "⌥ P"),
         ("Add files to a shelf", "⌥ S"),
         ("Delete the item", "⌘ ⌫"),

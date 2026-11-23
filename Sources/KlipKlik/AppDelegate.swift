@@ -40,7 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var newShelfItem: NSMenuItem!
     private var pasteStackItem: NSMenuItem!
     private var restoreLinkItem: NSMenuItem!
-    private var homebrewItem: NSMenuItem!
+    /// The Mac tools' live submenus.
+    private let menuTools = MenuBarTools()
     /// Disabled row at the top of the Timezone submenu naming the current zone.
     private var selectedZoneHeader: NSMenuItem!
 
@@ -164,6 +165,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ) { [weak self] in
             self?.togglePasteStack()
         }
+
+        FloatingCards.shared.onDidWriteToPasteboard = ignore
 
         snippets.onDidWriteToPasteboard = ignore
         snippets.start()
@@ -356,6 +359,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                  action: #selector(togglePasteStackFromMenu),
                                  key: "c", modifiers: [.control, .option, .command])
 
+        addItem(to: menu, "Scrolling Screenshot", symbol: "scroll", action: #selector(startScrollCapture))
+
         // Same wording as the Preferences row, and the same underlying setting:
         // this is that switch, not a second one that could disagree with it.
         stripFormattingItem = addItem(to: menu, "Strip Format when pasting", symbol: "textformat",
@@ -368,12 +373,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(.sectionHeader(title: "Mac Tools"))
 
-        for page in SettingsPage.Group.tools.pages {
-            let item = addItem(to: menu, page.title + "…", symbol: page.symbol,
-                               action: #selector(openSettingsPage(_:)))
-            item.representedObject = page.rawValue
-            if page == .homebrew { homebrewItem = item }
-        }
+        menuTools.openPage = { [weak self] page in self?.showPreferences(page) }
+        menuTools.install(into: menu)
 
         menu.addItem(.separator())
         menu.addItem(.sectionHeader(title: "KlipKlik"))
@@ -680,21 +681,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         restoreLinkItem?.isHidden = !monitor.linkCleaner.canRestore
 
-        let outdated = Homebrew.shared.outdated.count
-        homebrewItem?.title = outdated > 0
-            ? "\(SettingsPage.homebrew.title) (\(outdated))…"
-            : SettingsPage.homebrew.title + "…"
+        menuTools.refreshTitles()
     }
 
     @objc private func togglePasteStackFromMenu() { togglePasteStack() }
 
+    @objc private func startScrollCapture() {
+        // After the menu has closed, so it is not in the first shot.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { ScrollCapture.shared.start() }
+    }
+
     @objc private func restoreOriginalLink() { monitor.linkCleaner.restoreOriginal() }
 
-    @objc private func openSettingsPage(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let page = SettingsPage(rawValue: raw)
-        else { return }
-        showPreferences(page)
-    }
 
     @objc private func openPopup() { popup.show() }
 
@@ -771,6 +769,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ) { [weak self] note in
             let page = (note.object as? String).flatMap(SettingsPage.init(rawValue:)) ?? .uninstall
             self?.showPreferences(page)
+        }
+
+        // Pops one Mac Tools submenu ("cache", "ports", "homebrew",
+        // "uninstall") up near the top-left of the main screen and closes it
+        // again, so the menus can be looked at without clicking.
+        center.addObserver(
+            forName: Notification.Name("com.sanoj.KlipKlik.previewMenu"),
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let name = note.object as? String, let screen = NSScreen.main else { return }
+            let point = NSPoint(x: screen.frame.minX + 200, y: screen.frame.maxY - 120)
+            // Not from inside this block: it runs on the main dispatch queue,
+            // and a menu tracking inside it would hold that queue — the very
+            // queue the menu's live updates arrive on.
+            RunLoop.main.perform {
+                self?.menuTools.popUpForPreview(name, at: point)
+            }
+        }
+
+        // Starts a scrolling capture exactly as the menu does, drag included.
+        center.addObserver(
+            forName: Notification.Name("com.sanoj.KlipKlik.scrollCaptureStart"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            ScrollCapture.shared.start()
+        }
+
+        // Scrolling capture of "x,y,width,height" (top-left screen points),
+        // skipping the drag — the drag is the one step a script cannot do.
+        center.addObserver(
+            forName: Notification.Name("com.sanoj.KlipKlik.scrollCapture"),
+            object: nil,
+            queue: .main
+        ) { note in
+            let parts = (note.object as? String)?.split(separator: ",").compactMap { Double($0) } ?? []
+            guard parts.count == 4 else { return }
+            ScrollCapture.shared.capture(CGRect(x: parts[0], y: parts[1], width: parts[2], height: parts[3]))
         }
 
         // Shows the notch drop pad. A drag cannot be synthesised at all — it is a

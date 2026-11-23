@@ -29,6 +29,12 @@ enum ShelfStorage {
         return support.appendingPathComponent("KlipKlik", isDirectory: true)
     }
 
+    /// Whether `url` is one of the shelf's own staged copies, rather than a
+    /// file the user keeps somewhere.
+    static func isStaged(_ url: URL) -> Bool {
+        url.standardizedFileURL.path.hasPrefix(stagingDirectory.standardizedFileURL.path + "/")
+    }
+
     private static var stagingDirectory: URL {
         root.appendingPathComponent("staged", isDirectory: true)
     }

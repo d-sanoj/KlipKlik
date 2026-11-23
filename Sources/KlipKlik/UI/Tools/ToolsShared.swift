@@ -1,13 +1,17 @@
 import AppKit
 import SwiftUI
 
-/// The tool pages' state, kept by the window controller so a scan survives
-/// switching pages and closing the window — until the next scan.
+/// The tools' state — scans, lists, work in progress. One copy for the whole
+/// app, shared by the Settings pages and the menu bar submenus, so a scan
+/// started in one shows in the other and they can never disagree.
 final class ToolsModel: ObservableObject {
+    static let shared = ToolsModel()
+
     let uninstall = UninstallModel()
     let leftovers = OrphanModel()
     let cache = CacheModel()
     let ports = PortsModel()
+    let fileUsage = FileUsageModel()
 }
 
 // MARK: - Shared pieces
@@ -91,6 +95,97 @@ struct ToolTag: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 1.5)
             .background(Capsule().fill(color.opacity(0.14)))
+    }
+}
+
+extension ToolsAlert {
+    /// Any number of buttons; `handler` gets which was chosen.
+    static func ask(_ alert: NSAlert, handler: @escaping (NSApplication.ModalResponse) -> Void) {
+        if let window, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+            alert.beginSheetModal(for: window, completionHandler: handler)
+        } else {
+            handler(FloatingAlert.run(alert))
+        }
+    }
+
+    /// Reports how an action started from the menu bar went — the menu has
+    /// closed by then, so there is nowhere else to say it.
+    static func inform(_ title: String, _ text: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = title
+        alert.informativeText = text
+        alert.addButton(withTitle: "OK")
+        ask(alert) { _ in }
+    }
+}
+
+/// Stops a process the user picked, the same way everywhere: ask first, ask it
+/// to quit, offer to force it if it lingers, and offer the administrator route
+/// when it belongs to someone else. Shared by Ports and What's Using It.
+enum ProcessStopper {
+    /// - Parameter done: a line describing the outcome, and whether the
+    ///   process is gone.
+    static func stop(pid: Int32, name: String, reason: String, stoppedMessage: String,
+                     done: @escaping (String, Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = "Stop \(name) (PID \(pid))?"
+        alert.informativeText = reason + " Unsaved work in it may be lost."
+        alert.addButton(withTitle: "Stop")
+        alert.addButton(withTitle: "Cancel")
+        ToolsAlert.confirm(alert) { confirmed in
+            if confirmed { send(pid: pid, name: name, force: false, stoppedMessage: stoppedMessage, done: done) }
+        }
+    }
+
+    private static func send(pid: Int32, name: String, force: Bool, stoppedMessage: String,
+                             done: @escaping (String, Bool) -> Void) {
+        Ports.stop(pid: pid, force: force) { result in
+            handle(result, pid: pid, name: name, wasForced: force, stoppedMessage: stoppedMessage, done: done)
+        }
+    }
+
+    private static func handle(_ result: Ports.StopResult, pid: Int32, name: String, wasForced: Bool,
+                               stoppedMessage: String, done: @escaping (String, Bool) -> Void) {
+        switch result {
+        case .stopped:
+            done(stoppedMessage, true)
+        case .stillRunning:
+            guard !wasForced else {
+                done("\(name) is still running.", false)
+                return
+            }
+            let alert = NSAlert()
+            alert.messageText = "\(name) did not stop"
+            alert.informativeText = "Force it to quit? It gets no chance to clean up."
+            alert.addButton(withTitle: "Force Quit")
+            alert.addButton(withTitle: "Cancel")
+            ToolsAlert.confirm(alert) { confirmed in
+                if confirmed {
+                    send(pid: pid, name: name, force: true, stoppedMessage: stoppedMessage, done: done)
+                }
+            }
+        case .notPermitted:
+            let alert = NSAlert()
+            alert.messageText = "\(name) belongs to another user"
+            alert.informativeText = "Stopping it needs an administrator password."
+            alert.addButton(withTitle: "Stop as Administrator")
+            alert.addButton(withTitle: "Cancel")
+            ToolsAlert.confirm(alert) { confirmed in
+                guard confirmed else { return }
+                Ports.stopAsAdministrator(pid: pid) { result in
+                    if case .notPermitted = result {
+                        done("Not stopped: no password given.", false)
+                    } else {
+                        handle(result, pid: pid, name: name, wasForced: true,
+                               stoppedMessage: stoppedMessage, done: done)
+                    }
+                }
+            }
+        case .failed(let text):
+            done(text, false)
+        }
     }
 }
 
