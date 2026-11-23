@@ -15,59 +15,72 @@ final class ToolsModel: ObservableObject {
 /// "12.4 MB", or "—" when not measured.
 func formattedBytes(_ bytes: Int64?) -> String {
     guard let bytes else { return "—" }
-    return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    let formatter = ByteCountFormatter()
+    formatter.countStyle = .file
+    // "0 KB", not "Zero KB": a column of figures should stay figures.
+    formatter.allowsNonnumericFormatting = false
+    return formatter.string(fromByteCount: bytes)
 }
 
-/// Section heading with a line of explanation beneath it.
-struct ToolsHeader<Trailing: View>: View {
-    let title: String
-    let detail: String
+/// The strip along the bottom of a tool page: what is selected, and the one
+/// action that acts on it. Sits on the window's bar material, like the
+/// bottom bar of Finder or Mail.
+struct ToolActionBar<Leading: View, Trailing: View>: View {
+    @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 22, weight: .bold))
-                Text(detail)
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        HStack(spacing: 12) {
+            leading
             Spacer(minLength: 12)
             trailing
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 22)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
     }
 }
 
-extension ToolsHeader where Trailing == EmptyView {
-    init(title: String, detail: String) {
-        self.init(title: title, detail: detail) { EmptyView() }
+/// A message line under a tool, shown after an action finishes.
+struct ToolMessage: View {
+    let text: String?
+
+    var body: some View {
+        if let text {
+            Label(text, systemImage: "info.circle")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
     }
 }
 
-/// A message centred in an empty area.
-struct ToolsPlaceholder: View {
-    let symbol: String
+/// "Scanning…" in the middle of the page.
+struct ToolProgress: View {
     let text: String
-    var busy = false
 
     var body: some View {
         VStack(spacing: 10) {
-            if busy {
-                ProgressView().controlSize(.small)
-            } else {
-                Image(systemName: symbol).font(.system(size: 28)).foregroundStyle(.tertiary)
-            }
-            Text(text)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
+            ProgressView().controlSize(.regular)
+            Text(text).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// A small rounded tag: "Maybe", "System", "Open now".
+struct ToolTag: View {
+    let text: String
+    var color: Color = .secondary
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1.5)
+            .background(Capsule().fill(color.opacity(0.14)))
     }
 }
 

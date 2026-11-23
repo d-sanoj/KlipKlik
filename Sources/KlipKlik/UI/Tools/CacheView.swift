@@ -98,121 +98,180 @@ struct CacheView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ToolsHeader(
-                title: "Cache Cleaner",
-                detail: "Only what apps rebuild on their own. Cookies, saved logins, Local Storage, "
-                    + "IndexedDB, the keychain and password managers are never listed."
-            ) {
-                Button(model.hasScanned ? "Scan Again" : "Scan") { model.scan() }
-                    .disabled(model.isScanning || model.isCleaning)
+            content
+            if model.hasScanned, !model.items.isEmpty {
+                ToolActionBar {
+                    ToolMessage(text: model.message)
+                } trailing: {
+                    if model.isCleaning { ProgressView().controlSize(.small) }
+                    Button("Clear \(formattedBytes(model.selectedBytes))") { model.clean() }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(model.checked.isEmpty || model.isCleaning)
+                }
             }
-
-            if model.isScanning {
-                ToolsPlaceholder(symbol: "magnifyingglass", text: "Measuring caches…", busy: true)
-            } else if !model.hasScanned {
-                ToolsPlaceholder(
-                    symbol: "sparkles",
-                    text: "Scan to see what can be cleared. Nothing is deleted until you choose."
-                )
-            } else if model.items.isEmpty {
-                ToolsPlaceholder(symbol: "checkmark.circle", text: model.message ?? "Nothing worth clearing.")
-            } else {
-                list
-                footer
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    model.scan()
+                } label: {
+                    Label(model.hasScanned ? "Scan Again" : "Scan", systemImage: "arrow.clockwise")
+                }
+                .disabled(model.isScanning || model.isCleaning)
             }
         }
     }
 
-    private var list: some View {
-        List {
-            ForEach(CacheItem.Category.allCases) { category in
-                let rows = model.items(in: category)
-                if !rows.isEmpty {
-                    Section {
-                        ForEach(rows) { item in row(item) }
-                    } header: {
-                        VStack(alignment: .leading, spacing: 2) {
+    @ViewBuilder
+    private var content: some View {
+        if model.isScanning {
+            ToolProgress(text: "Measuring caches…")
+        } else if !model.hasScanned {
+            ContentUnavailableView {
+                Label("Cache Cleaner", systemImage: "sparkles")
+            } description: {
+                Text("Clears only what apps rebuild on their own — including the download caches "
+                    + "of ChatGPT, Claude and other AI and web apps. Cookies, saved logins, local "
+                    + "app data, the keychain and password managers are never touched.")
+            } actions: {
+                Button("Scan") { model.scan() }
+                    .buttonStyle(.borderedProminent)
+            }
+        } else if model.items.isEmpty {
+            ContentUnavailableView {
+                Label("All Clean", systemImage: "checkmark.seal")
+            } description: {
+                Text(model.message ?? "Nothing is worth clearing right now.")
+            }
+        } else {
+            Form {
+                Section {
+                    CacheSummary(model: model)
+                }
+
+                ForEach(CacheItem.Category.allCases) { category in
+                    let rows = model.items(in: category)
+                    if !rows.isEmpty {
+                        Section {
+                            ForEach(rows) { item in
+                                CheckRow(
+                                    isOn: Binding(
+                                        get: { model.checked.contains(item.id) },
+                                        set: { _ in model.toggle(item) }
+                                    ),
+                                    title: item.owner,
+                                    subtitle: item.url.path.replacingOccurrences(
+                                        of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~"),
+                                    trailing: formattedBytes(item.size),
+                                    note: item.note,
+                                    url: item.url
+                                )
+                                .contextMenu {
+                                    Button("Show in Finder") { revealInFinder(item.url) }
+                                    Button("Never Offer This Again") { model.skip(item) }
+                                }
+                            }
+                        } header: {
                             HStack {
-                                Text(category.title).font(.system(size: 12, weight: .semibold))
+                                Circle().fill(category.color).frame(width: 8, height: 8)
+                                Text(category.title)
                                 Spacer()
-                                Text(formattedBytes(rows.reduce(0) { $0 + $1.size }))
-                                    .foregroundStyle(.secondary)
-                                Button("All") { model.setAll(category, true) }
-                                    .buttonStyle(.borderless)
-                                Button("None") { model.setAll(category, false) }
-                                    .buttonStyle(.borderless)
+                                Text(formattedBytes(rows.reduce(0) { $0 + $1.size })).monospacedDigit()
+                                Menu {
+                                    Button("Select All") { model.setAll(category, true) }
+                                    Button("Select None") { model.setAll(category, false) }
+                                } label: {
+                                    Image(systemName: "ellipsis.circle")
+                                }
+                                .menuStyle(.borderlessButton)
+                                .menuIndicator(.hidden)
+                                .fixedSize()
                             }
-                            Text(category.detail)
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(.vertical, 2)
-                    }
-                }
-            }
-
-            if !settings.cacheCleanerSkipped.isEmpty {
-                Section("Never offered") {
-                    ForEach(settings.cacheCleanerSkipped, id: \.self) { path in
-                        HStack {
-                            Text(path).font(.system(size: 11)).lineLimit(1).truncationMode(.middle)
-                            Spacer()
-                            Button("Offer again") {
-                                settings.cacheCleanerSkipped.removeAll { $0 == path }
-                            }
-                            .buttonStyle(.borderless)
-                            .font(.system(size: 11))
+                        } footer: {
+                            Text(category.detail).foregroundStyle(.secondary)
                         }
                     }
                 }
-            }
-        }
-        .listStyle(.inset)
-    }
 
-    private func row(_ item: CacheItem) -> some View {
-        HStack(spacing: 8) {
-            Toggle("", isOn: Binding(
-                get: { model.checked.contains(item.id) },
-                set: { _ in model.toggle(item) }
-            ))
-            .toggleStyle(.checkbox)
-            .labelsHidden()
-            VStack(alignment: .leading, spacing: 1) {
-                Text(item.owner).font(.system(size: 12.5)).lineLimit(1)
-                Text(item.note ?? item.url.path.replacingOccurrences(
-                    of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~"))
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(item.note == nil ? .secondary : Color.orange)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if !settings.cacheCleanerSkipped.isEmpty {
+                    Section("Never offered") {
+                        ForEach(settings.cacheCleanerSkipped, id: \.self) { path in
+                            LabeledContent {
+                                Button("Offer Again") {
+                                    settings.cacheCleanerSkipped.removeAll { $0 == path }
+                                }
+                                .buttonStyle(.borderless)
+                            } label: {
+                                Text(path).lineLimit(1).truncationMode(.middle)
+                            }
+                        }
+                    }
+                }
             }
-            Spacer()
-            Text(formattedBytes(item.size))
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-        }
-        .contextMenu {
-            Button("Show in Finder") { revealInFinder(item.url) }
-            Button("Never Offer This Again") { model.skip(item) }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
         }
     }
+}
 
-    private var footer: some View {
-        HStack(spacing: 10) {
-            if let message = model.message {
-                Text(message).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+/// How much was found, as a bar split by category — the way Storage in
+/// System Settings shows a disk.
+private struct CacheSummary: View {
+    @ObservedObject var model: CacheModel
+
+    private var total: Int64 { model.items.reduce(0) { $0 + $1.size } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(formattedBytes(model.selectedBytes))
+                    .font(.system(size: 26, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                Text("selected of \(formattedBytes(total)) found")
+                    .foregroundStyle(.secondary)
             }
-            Spacer()
-            Text("\(model.checked.count) selected · \(formattedBytes(model.selectedBytes))")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            if model.isCleaning { ProgressView().controlSize(.small) }
-            Button("Clear Selected") { model.clean() }
-                .keyboardShortcut(.defaultAction)
-                .disabled(model.checked.isEmpty || model.isCleaning)
+
+            GeometryReader { geometry in
+                HStack(spacing: 2) {
+                    ForEach(CacheItem.Category.allCases) { category in
+                        let size = model.items(in: category).reduce(0) { $0 + $1.size }
+                        if size > 0 {
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .fill(category.color.gradient)
+                                .frame(width: max(4, geometry.size.width * CGFloat(size) / CGFloat(max(total, 1))))
+                        }
+                    }
+                }
+            }
+            .frame(height: 10)
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+
+            HStack(spacing: 14) {
+                ForEach(CacheItem.Category.allCases) { category in
+                    let size = model.items(in: category).reduce(0) { $0 + $1.size }
+                    if size > 0 {
+                        HStack(spacing: 5) {
+                            Circle().fill(category.color).frame(width: 7, height: 7)
+                            Text(category.title).foregroundStyle(.secondary)
+                            Text(formattedBytes(size)).monospacedDigit()
+                        }
+                        .font(.caption)
+                    }
+                }
+            }
         }
-        .padding(12)
+        .padding(.vertical, 4)
+    }
+}
+
+extension CacheItem.Category {
+    var color: Color {
+        switch self {
+        case .appCaches: return .blue
+        case .webCaches: return .purple
+        case .logs: return .orange
+        case .developer: return .teal
+        }
     }
 }

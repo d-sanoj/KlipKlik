@@ -90,3 +90,54 @@ import Testing
         #expect(!script.contains("rm "))
     }
 }
+
+@Suite struct BrewInstalledParserTests {
+    private let json = """
+    {
+      "formulae": [
+        {"name": "abseil", "desc": "C++ Common Libraries", "homepage": "https://abseil.io",
+         "versions": {"stable": "20260817.0"}, "pinned": false, "outdated": false,
+         "installed": [{"version": "20260817.0", "installed_on_request": false}]},
+        {"name": "ffmpeg", "desc": "Play, record, convert media", "versions": {"stable": "9.1"},
+         "pinned": false, "outdated": true,
+         "installed": [{"version": "9.0.2_1", "installed_on_request": true}]}
+      ],
+      "casks": [
+        {"token": "visual-studio-code", "name": ["Visual Studio Code"], "desc": "Code editor",
+         "version": "1.99.0", "installed": "1.98.0", "outdated": true, "auto_updates": true}
+      ]
+    }
+    """
+
+    @Test func listsEverythingInstalled() throws {
+        let outdated = [BrewPackage(name: "ffmpeg", displayName: "ffmpeg", isCask: false,
+                                    installed: "9.0.2_1", latest: "9.1", isOutdated: true, pinned: false)]
+        let packages = try #require(BrewInstalledParser.parse(Data(json.utf8), outdated: outdated))
+        #expect(packages.map(\.name) == ["abseil", "ffmpeg", "visual-studio-code"])
+
+        let abseil = try #require(packages.first { $0.name == "abseil" })
+        #expect(!abseil.isOutdated)
+        #expect(!abseil.installedOnRequest)
+        #expect(abseil.summary == "C++ Common Libraries")
+        #expect(abseil.homepage?.host == "abseil.io")
+
+        let ffmpeg = try #require(packages.first { $0.name == "ffmpeg" })
+        #expect(ffmpeg.isOutdated)
+        #expect(ffmpeg.installed == "9.0.2_1")
+        #expect(ffmpeg.latest == "9.1")
+    }
+
+    @Test func trustsBrewOutdatedOverTheInfoFlag() throws {
+        // The cask says outdated in `brew info`, but it updates itself, so
+        // `brew outdated` leaves it out — and so must the list.
+        let packages = try #require(BrewInstalledParser.parse(Data(json.utf8), outdated: []))
+        let code = try #require(packages.first { $0.isCask })
+        #expect(code.displayName == "Visual Studio Code")
+        #expect(!code.isOutdated)
+        #expect(code.installed == "1.98.0")
+    }
+
+    @Test func brokenOutput() {
+        #expect(BrewInstalledParser.parse(Data("Error".utf8), outdated: []) == nil)
+    }
+}

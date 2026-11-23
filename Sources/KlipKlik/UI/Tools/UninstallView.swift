@@ -48,6 +48,12 @@ final class UninstallModel: ObservableObject {
         }
     }
 
+    /// The list's selection: the chosen installed app, if that is the target.
+    var selectedAppID: String? {
+        if case .app(let app) = target { return app.id }
+        return nil
+    }
+
     var selectedBytes: Int64 {
         leftovers.filter { checked.contains($0.id) }.reduce(0) { $0 + ($1.size ?? 0) }
     }
@@ -239,8 +245,11 @@ final class UninstallModel: ObservableObject {
 
 // MARK: - View
 
+/// Apps on the left, the chosen app's files on the right — the layout of
+/// Mail or Notes, so it reads at a glance.
 struct UninstallView: View {
     @ObservedObject var model: UninstallModel
+    @ObservedObject private var settings = Settings.shared
     @State private var isDropTargeted = false
 
     var body: some View {
@@ -261,198 +270,252 @@ struct UninstallView: View {
         }
         .overlay {
             if isDropTargeted {
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
-                    .padding(6)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.accentColor, lineWidth: 3)
+                    .background(Color.accentColor.opacity(0.06))
+                    .padding(8)
+                    .allowsHitTesting(false)
             }
         }
-    }
-
-    private var appList: some View {
-        VStack(spacing: 0) {
-            HStack {
-                TextField("Search apps", text: $model.query)
-                    .textFieldStyle(.roundedBorder)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
                 Button {
                     model.reloadApps()
                 } label: {
-                    Image(systemName: "arrow.clockwise")
+                    Label("Reload Apps", systemImage: "arrow.clockwise")
                 }
-                .buttonStyle(.borderless)
-                .help("Reload the list")
+                .help("Look for apps again")
             }
+        }
+    }
+
+    // MARK: App list
+
+    private var appList: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Filter", text: $model.query)
+                    .textFieldStyle(.plain)
+                if !model.query.isEmpty {
+                    Button {
+                        model.query = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.quaternary.opacity(0.5)))
             .padding(10)
 
             if model.isLoadingApps {
-                ToolsPlaceholder(symbol: "app", text: "Looking for apps…", busy: true)
+                ToolProgress(text: "Finding apps…")
             } else {
-                List(model.filteredApps) { app in
-                    AppRow(app: app, size: model.appSizes[app.id],
-                           isSelected: model.target == .app(app))
-                        .contentShape(Rectangle())
-                        .onTapGesture { model.select(app) }
+                List(selection: Binding(
+                    get: { model.selectedAppID },
+                    set: { id in
+                        if let id, let app = model.apps.first(where: { $0.id == id }) { model.select(app) }
+                    }
+                )) {
+                    ForEach(model.filteredApps) { app in
+                        AppRow(app: app, size: model.appSizes[app.id])
+                            .tag(app.id)
+                    }
                 }
-                .listStyle(.plain)
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
             }
 
-            Text("Or drop an app here.")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-                .padding(8)
+            Divider()
+            Toggle("Offer to clean up after removed apps", isOn: $settings.watchRemovedApps)
+                .toggleStyle(.checkbox)
+                .font(.callout)
+                .help("When an app leaves Applications, KlipKlik lists the files it left behind "
+                    + "for you to review. Nothing is removed without asking.")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
         }
+        .background(.background.opacity(0.4))
     }
+
+    // MARK: Detail
 
     @ViewBuilder
     private var detail: some View {
         if let target = model.target {
             VStack(spacing: 0) {
-                ToolsHeader(
-                    title: target.name,
-                    detail: headerDetail(target)
-                )
+                header(for: target)
+                Divider()
                 if model.isScanning {
-                    ToolsPlaceholder(symbol: "magnifyingglass", text: "Looking for its files…", busy: true)
+                    ToolProgress(text: "Looking for everything \(target.name) keeps…")
                 } else if model.leftovers.isEmpty {
-                    ToolsPlaceholder(symbol: "checkmark.circle", text: model.message ?? "Nothing left behind.")
+                    ContentUnavailableView {
+                        Label("Nothing Left Behind", systemImage: "checkmark.seal")
+                    } description: {
+                        Text(model.message ?? "\(target.name) keeps no files outside its app.")
+                    }
                 } else {
-                    leftoverList
-                    footer
+                    LeftoverTable(items: model.leftovers, checked: $model.checked)
+                }
+                ToolActionBar {
+                    ToolMessage(text: model.message)
+                } trailing: {
+                    if !model.leftovers.isEmpty {
+                        Text("\(model.checked.count) of \(model.leftovers.count) · "
+                            + formattedBytes(model.selectedBytes))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    if model.isRemoving { ProgressView().controlSize(.small) }
+                    Button(removesApp ? "Uninstall" : "Move to Trash", role: .destructive) {
+                        model.removeChecked()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(model.checked.isEmpty || model.isRemoving || model.isScanning)
                 }
             }
         } else {
-            VStack {
-                ToolsHeader(
-                    title: "Uninstall Cleaner",
-                    detail: "Pick an app to see everything it keeps on this Mac — support files, "
-                        + "caches, preferences, containers, login helpers and installer receipts — "
-                        + "and remove it all together. Everything goes to the Trash."
-                )
-                ToolsPlaceholder(
-                    symbol: "trash",
-                    text: model.message ?? "Choose an app on the left, or drop one here."
-                )
+            ContentUnavailableView {
+                Label("Choose an App", systemImage: "trash")
+            } description: {
+                Text(model.message ?? "Pick an app to see everything it keeps on this Mac — support "
+                    + "files, caches, preferences, containers, helpers and installer receipts — and "
+                    + "remove it all at once. You can also drop an app here.")
             }
         }
     }
 
-    private func headerDetail(_ target: UninstallModel.Target) -> String {
-        switch target {
-        case .app(let app):
-            return [app.bundleID, app.version.map { "Version \($0)" }]
-                .compactMap(\.self).joined(separator: " · ")
-        case .removed(_, let identity):
-            return "\(identity.bundleID) · The app has been removed; these are the files it left."
-        }
+    private var removesApp: Bool {
+        model.leftovers.contains { $0.kind == .appBundle && model.checked.contains($0.id) }
     }
 
-    private var leftoverList: some View {
-        List {
-            ForEach(model.leftovers) { item in
-                LeftoverRow(item: item, isChecked: model.checked.contains(item.id)) {
-                    model.toggle(item)
+    private func header(for target: UninstallModel.Target) -> some View {
+        HStack(spacing: 14) {
+            Group {
+                if case .app(let app) = target {
+                    Image(nsImage: app.icon).resizable()
+                } else {
+                    Image(systemName: "app.dashed").resizable().foregroundStyle(.tertiary)
+                }
+            }
+            .frame(width: 52, height: 52)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(target.name).font(.title2.weight(.semibold))
+                Text(subtitle(for: target))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer()
+            if !model.leftovers.isEmpty {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(formattedBytes(model.leftovers.reduce(0) { $0 + ($1.size ?? 0) }))
+                        .font(.title3.weight(.semibold))
+                        .monospacedDigit()
+                    Text("\(model.leftovers.count) items found")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
-        .listStyle(.inset)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
     }
 
-    private var footer: some View {
-        HStack(spacing: 10) {
-            if let message = model.message {
-                Text(message)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-            Spacer()
-            Text("\(model.checked.count) selected · \(formattedBytes(model.selectedBytes))")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            if model.isRemoving {
-                ProgressView().controlSize(.small)
-            }
-            Button(model.leftovers.contains { $0.kind == .appBundle && model.checked.contains($0.id) }
-                   ? "Uninstall" : "Move to Trash") {
-                model.removeChecked()
-            }
-            .keyboardShortcut(.defaultAction)
-            .disabled(model.checked.isEmpty || model.isRemoving)
+    private func subtitle(for target: UninstallModel.Target) -> String {
+        switch target {
+        case .app(let app):
+            return [app.version.map { "Version \($0)" }, app.bundleID].compactMap(\.self).joined(separator: "  ·  ")
+        case .removed(_, let identity):
+            return "Already removed  ·  \(identity.bundleID)"
         }
-        .padding(12)
     }
 }
 
 private struct AppRow: View {
     let app: AppBundle
     let size: Int64?
-    let isSelected: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(nsImage: app.icon).resizable().frame(width: 24, height: 24)
+        HStack(spacing: 9) {
+            Image(nsImage: app.icon).resizable().frame(width: 26, height: 26)
             VStack(alignment: .leading, spacing: 1) {
-                Text(app.name).font(.system(size: 12.5)).lineLimit(1)
-                Text(formattedBytes(size))
-                    .font(.system(size: 10.5))
+                Text(app.name).lineLimit(1)
+                Text(size.map { formattedBytes($0) } ?? "Measuring…")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                    .monospacedDigit()
             }
-            Spacer()
         }
         .padding(.vertical, 2)
-        .padding(.horizontal, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 5).fill(isSelected ? Color.accentColor.opacity(0.18) : .clear)
-        )
     }
 }
 
-/// One found item, with its tick box, where it is and how big.
-struct LeftoverRow: View {
-    let item: Leftover
-    let isChecked: Bool
-    let toggle: () -> Void
+/// Found files in a native table: tick, name, where, size — sortable by
+/// size, the column people actually sort by.
+struct LeftoverTable: View {
+    let items: [Leftover]
+    @Binding var checked: Set<String>
 
     var body: some View {
-        HStack(spacing: 8) {
-            Toggle("", isOn: Binding(get: { isChecked }, set: { _ in toggle() }))
+        Table(items) {
+            TableColumn("") { item in
+                Toggle("", isOn: Binding(
+                    get: { checked.contains(item.id) },
+                    set: { on in if on { checked.insert(item.id) } else { checked.remove(item.id) } }
+                ))
                 .toggleStyle(.checkbox)
                 .labelsHidden()
-            Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
-                .resizable()
-                .frame(width: 18, height: 18)
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 6) {
-                    Text(item.url.lastPathComponent).font(.system(size: 12.5)).lineLimit(1)
+            }
+            .width(22)
+
+            TableColumn("Name") { item in
+                HStack(spacing: 7) {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
+                        .resizable()
+                        .frame(width: 16, height: 16)
+                    Text(item.url.lastPathComponent).lineLimit(1).truncationMode(.middle)
                     if item.strength == .related {
-                        badge("Maybe", help: "The name is close, not certain. Check before removing.")
+                        ToolTag(text: "Maybe", color: .orange)
+                            .help("The name is close, not certain. Check before removing.")
                     }
                     if item.needsAdmin {
-                        badge("System", help: "Removing it needs your password.")
+                        ToolTag(text: "System", color: .purple)
+                            .help("Removing it needs your password.")
                     }
                 }
+                .contextMenu {
+                    Button("Show in Finder") { revealInFinder(item.url) }
+                }
+            }
+            .width(min: 200, ideal: 280)
+
+            TableColumn("Location") { item in
                 Text(item.displayFolder)
-                    .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                    .truncationMode(.head)
+                    .help(item.url.path)
             }
-            Spacer()
-            Text(formattedBytes(item.size))
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-        }
-        .contextMenu {
-            Button("Show in Finder") { revealInFinder(item.url) }
-        }
-    }
+            .width(min: 140, ideal: 220)
 
-    private func badge(_ text: String, help: String) -> some View {
-        Text(text)
-            .font(.system(size: 9.5, weight: .semibold))
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(Capsule().fill(Color.secondary.opacity(0.18)))
-            .help(help)
+            TableColumn("Size") { item in
+                Text(formattedBytes(item.size))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .width(min: 64, ideal: 80, max: 100)
+        }
+        .tableStyle(.inset(alternatesRowBackgrounds: true))
     }
 }
 
@@ -530,65 +593,126 @@ struct OrphanView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ToolsHeader(
-                title: "Leftover Files",
-                detail: "Files named after apps that are no longer installed. Only names that say "
-                    + "exactly whose they are (com.vendor.app) are listed, and nothing from a vendor "
-                    + "that still has an app here. None is ticked — check each one."
-            ) {
-                Button(model.hasScanned ? "Scan Again" : "Scan") { model.scan() }
-                    .disabled(model.isScanning)
+            content
+            if model.hasScanned, !model.groups.isEmpty {
+                ToolActionBar {
+                    ToolMessage(text: model.message)
+                } trailing: {
+                    Text("\(model.checked.count) selected · "
+                        + formattedBytes(model.selectedItems.reduce(0) { $0 + ($1.size ?? 0) }))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                    if model.isRemoving { ProgressView().controlSize(.small) }
+                    Button("Move to Trash", role: .destructive) { model.removeChecked() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .disabled(model.checked.isEmpty || model.isRemoving)
+                }
             }
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    model.scan()
+                } label: {
+                    Label(model.hasScanned ? "Scan Again" : "Scan", systemImage: "magnifyingglass")
+                }
+                .disabled(model.isScanning)
+            }
+        }
+    }
 
-            if model.isScanning {
-                ToolsPlaceholder(symbol: "magnifyingglass", text: "Looking through Library…", busy: true)
-            } else if !model.hasScanned {
-                ToolsPlaceholder(symbol: "doc.badge.ellipsis", text: "Scan to look for leftovers.")
-            } else if model.groups.isEmpty {
-                ToolsPlaceholder(symbol: "checkmark.circle",
-                                 text: model.message ?? "No leftovers from removed apps.")
-            } else {
-                List {
-                    ForEach(model.groups) { group in
-                        Section {
-                            ForEach(group.items) { item in
-                                LeftoverRow(item: item, isChecked: model.checked.contains(item.id)) {
-                                    if model.checked.contains(item.id) {
-                                        model.checked.remove(item.id)
-                                    } else {
-                                        model.checked.insert(item.id)
+    @ViewBuilder
+    private var content: some View {
+        if model.isScanning {
+            ToolProgress(text: "Looking through Library…")
+        } else if !model.hasScanned {
+            ContentUnavailableView {
+                Label("Leftover Files", systemImage: "doc.badge.ellipsis")
+            } description: {
+                Text("Finds files named after apps that are no longer installed. Only names that "
+                    + "say exactly whose they are are listed, never anything an installed app "
+                    + "still uses, and nothing is ticked for you.")
+            } actions: {
+                Button("Scan") { model.scan() }
+                    .buttonStyle(.borderedProminent)
+            }
+        } else if model.groups.isEmpty {
+            ContentUnavailableView {
+                Label("No Leftovers", systemImage: "checkmark.seal")
+            } description: {
+                Text(model.message ?? "Nothing here belongs to a removed app.")
+            }
+        } else {
+            Form {
+                ForEach(model.groups) { group in
+                    Section {
+                        ForEach(group.items) { item in
+                            CheckRow(
+                                isOn: Binding(
+                                    get: { model.checked.contains(item.id) },
+                                    set: { on in
+                                        if on { model.checked.insert(item.id) } else { model.checked.remove(item.id) }
                                     }
-                                }
-                            }
-                        } header: {
-                            HStack {
-                                Text(group.id).font(.system(size: 12, weight: .semibold))
-                                Spacer()
-                                Text(formattedBytes(group.totalSize)).foregroundStyle(.secondary)
-                                Button("Select") { model.toggle(group) }
-                                    .buttonStyle(.borderless)
-                                    .font(.system(size: 11))
-                            }
+                                ),
+                                title: item.url.lastPathComponent,
+                                subtitle: item.displayFolder,
+                                trailing: formattedBytes(item.size),
+                                url: item.url
+                            )
+                        }
+                    } header: {
+                        HStack {
+                            Text(group.id).textCase(nil)
+                            Spacer()
+                            Text(formattedBytes(group.totalSize)).monospacedDigit()
+                            Button("Select") { model.toggle(group) }
+                                .buttonStyle(.borderless)
+                                .controlSize(.small)
                         }
                     }
                 }
-                .listStyle(.inset)
-
-                HStack {
-                    if let message = model.message {
-                        Text(message).font(.system(size: 11)).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text("\(model.checked.count) selected · "
-                        + formattedBytes(model.selectedItems.reduce(0) { $0 + ($1.size ?? 0) }))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                    if model.isRemoving { ProgressView().controlSize(.small) }
-                    Button("Move to Trash") { model.removeChecked() }
-                        .disabled(model.checked.isEmpty || model.isRemoving)
-                }
-                .padding(12)
             }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+        }
+    }
+}
+
+/// A ticked row inside a grouped form: checkbox, two lines of text, a figure.
+struct CheckRow: View {
+    @Binding var isOn: Bool
+    let title: String
+    let subtitle: String
+    let trailing: String
+    var note: String? = nil
+    var url: URL? = nil
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Toggle("", isOn: $isOn)
+                .toggleStyle(.checkbox)
+                .labelsHidden()
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(title).lineLimit(1)
+                    if let note { ToolTag(text: note, color: .orange) }
+                }
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 8)
+            Text(trailing)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { isOn.toggle() }
+        .contextMenu {
+            if let url { Button("Show in Finder") { revealInFinder(url) } }
         }
     }
 }

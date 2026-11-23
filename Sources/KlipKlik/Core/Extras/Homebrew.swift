@@ -1,13 +1,22 @@
 import Combine
 import Foundation
 
-/// One outdated package.
+/// One installed Homebrew package, formula or cask.
 struct BrewPackage: Identifiable, Hashable {
     let name: String
+    /// What the package calls itself: "Visual Studio Code" for the cask
+    /// `visual-studio-code`. Same as `name` for formulae.
+    var displayName: String
     let isCask: Bool
     let installed: String
-    let latest: String
+    /// The newest version Homebrew knows of.
+    var latest: String
+    var isOutdated: Bool
     let pinned: Bool
+    var summary: String?
+    var homepage: URL?
+    /// False for a formula that only came in as another one's dependency.
+    var installedOnRequest: Bool = true
 
     var id: String { (isCask ? "cask:" : "formula:") + name }
 }
@@ -25,9 +34,11 @@ enum BrewOutdatedParser {
                 guard let name = entry["name"] as? String else { continue }
                 packages.append(BrewPackage(
                     name: name,
+                    displayName: name,
                     isCask: isCask,
                     installed: versionText(entry["installed_versions"]),
                     latest: versionText(entry["current_version"]),
+                    isOutdated: true,
                     pinned: entry["pinned"] as? Bool ?? false
                 ))
             }
@@ -37,35 +48,110 @@ enum BrewOutdatedParser {
 
     /// Homebrew writes versions as a string or as a list of strings,
     /// depending on the package type and the Homebrew version.
-    private static func versionText(_ value: Any?) -> String {
+    static func versionText(_ value: Any?) -> String {
         if let text = value as? String { return text }
         if let list = value as? [String] { return list.last ?? "" }
         return ""
     }
 }
 
-/// Checks Homebrew for outdated packages, and upgrades them on request.
+/// Reads `brew info --json=v2 --installed`: every installed package, outdated
+/// or not.
+enum BrewInstalledParser {
+    /// - Parameter outdated: the answer from `brew outdated`, which is the
+    ///   one to trust on whether something needs updating — it knows which
+    ///   casks update themselves and so must not be flagged.
+    static func parse(_ data: Data, outdated: [BrewPackage]) -> [BrewPackage]? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        let newer = Dictionary(outdated.map { ($0.id, $0.latest) }, uniquingKeysWith: { first, _ in first })
+        var packages: [BrewPackage] = []
+
+        for entry in root["formulae"] as? [[String: Any]] ?? [] {
+            guard let name = entry["name"] as? String else { continue }
+            let installs = entry["installed"] as? [[String: Any]] ?? []
+            let current = installs.last
+            let versions = entry["versions"] as? [String: Any]
+            var package = BrewPackage(
+                name: name,
+                displayName: name,
+                isCask: false,
+                installed: current?["version"] as? String ?? "",
+                latest: versions?["stable"] as? String ?? "",
+                isOutdated: false,
+                pinned: entry["pinned"] as? Bool ?? false,
+                summary: entry["desc"] as? String,
+                homepage: (entry["homepage"] as? String).flatMap(URL.init(string:)),
+                installedOnRequest: current?["installed_on_request"] as? Bool ?? true
+            )
+            if let latest = newer[package.id] {
+                package.isOutdated = true
+                package.latest = latest
+            }
+            packages.append(package)
+        }
+
+        for entry in root["casks"] as? [[String: Any]] ?? [] {
+            guard let token = entry["token"] as? String else { continue }
+            let names = entry["name"] as? [String] ?? []
+            var package = BrewPackage(
+                name: token,
+                displayName: names.first ?? token,
+                isCask: true,
+                installed: BrewOutdatedParser.versionText(entry["installed"]),
+                latest: entry["version"] as? String ?? "",
+                isOutdated: false,
+                pinned: false,
+                summary: entry["desc"] as? String,
+                homepage: (entry["homepage"] as? String).flatMap(URL.init(string:))
+            )
+            if let latest = newer[package.id] {
+                package.isOutdated = true
+                package.latest = latest
+            }
+            packages.append(package)
+        }
+
+        return packages.sorted {
+            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        }
+    }
+}
+
+/// Everything installed with Homebrew: what is there, what is out of date, and
+/// updating or removing any one of it.
 ///
 /// Runs the real `brew`, rather than reading Homebrew's folders and API behind
 /// its back: it already knows which casks update themselves (and so must not
-/// be reported as outdated), which are pinned, and how to upgrade each one.
-/// Twice a day in the background when the setting is on, and on demand from
-/// the Tools window.
+/// be reported as outdated), which are pinned, what depends on what, and how to
+/// upgrade or remove each one. Checks twice a day in the background when the
+/// setting is on, and on demand from the window.
 final class Homebrew: ObservableObject {
     static let shared = Homebrew()
 
+    /// Every installed formula and cask.
+    @Published private(set) var installed: [BrewPackage] = []
+    /// The ones with a newer version. Drives the badge and the menu count.
     @Published private(set) var outdated: [BrewPackage] = []
     @Published private(set) var isChecking = false
-    @Published private(set) var isUpgrading = false
+    /// Packages being updated or removed right now, by id.
+    @Published private(set) var busy: Set<String> = []
     @Published private(set) var lastChecked: Date?
     @Published private(set) var lastError: String?
-    /// Output of the last upgrade, for the window to show.
+    /// Output of the last update or removal, for the window to show.
     @Published private(set) var log = ""
+    /// One line about how the last action went.
+    @Published private(set) var lastResult: String?
 
     static let checkInterval: TimeInterval = 12 * 60 * 60
+    /// Placeholder id while "Update All" runs.
+    static let allID = "*"
 
     private var timer: Timer?
     private var cancellables = Set<AnyCancellable>()
+
+    var isWorking: Bool { !busy.isEmpty }
 
     /// Where brew lives: Apple silicon prefix first, then Intel.
     static var executable: URL? {
@@ -107,37 +193,49 @@ final class Homebrew: ObservableObject {
         timer = repeating
     }
 
+    // MARK: Checking
+
+    /// Reads what is installed and what is outdated.
+    ///
     /// - Parameter refresh: run `brew update` first, so the answer reflects
     ///   what has been released since Homebrew last looked.
     func check(refresh: Bool) {
-        guard !isChecking, !isUpgrading, Self.isInstalled else { return }
+        guard !isChecking, !isWorking, Self.isInstalled else { return }
         isChecking = true
         lastError = nil
 
         DispatchQueue.global(qos: .utility).async {
             if refresh { _ = Self.run(["update", "--quiet"]) }
-            let result = Self.run(["outdated", "--json=v2"])
-            let packages = BrewOutdatedParser.parse(result.output)
+            let quiet = ["HOMEBREW_NO_AUTO_UPDATE": "1"]
+            let outdatedResult = Self.run(["outdated", "--json=v2"], extraEnvironment: quiet)
+            let outdated = BrewOutdatedParser.parse(outdatedResult.output)
+            let infoResult = Self.run(["info", "--json=v2", "--installed"], extraEnvironment: quiet)
+            let installed = BrewInstalledParser.parse(infoResult.output, outdated: outdated ?? [])
 
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 isChecking = false
                 lastChecked = Date()
-                if let packages {
-                    outdated = packages
+                if let outdated { self.outdated = outdated }
+                if let installed {
+                    self.installed = installed
                 } else {
-                    lastError = result.errorText.isEmpty ? "Homebrew gave no answer." : result.errorText
+                    let error = infoResult.errorText.isEmpty ? outdatedResult.errorText : infoResult.errorText
+                    lastError = error.isEmpty ? "Homebrew gave no answer." : error
                 }
             }
         }
     }
 
-    /// Upgrades `packages`, or everything outdated when nil. Pinned formulae
+    // MARK: Updating and removing
+
+    /// Updates `packages`, or everything outdated when nil. Pinned formulae
     /// are left alone, as `brew upgrade` itself does.
     func upgrade(_ packages: [BrewPackage]? = nil) {
-        guard !isUpgrading, !isChecking, Self.isInstalled else { return }
+        guard !isChecking, Self.isInstalled else { return }
 
         var commands: [[String]] = [["upgrade"]]
+        var ids: Set<String> = [Self.allID]
         if let packages {
             // Formulae and casks in separate runs, so a name shared by both
             // cannot be taken for the wrong one.
@@ -146,30 +244,59 @@ final class Homebrew: ObservableObject {
             commands = []
             if !formulae.isEmpty { commands.append(["upgrade", "--formula"] + formulae) }
             if !casks.isEmpty { commands.append(["upgrade", "--cask"] + casks) }
+            ids = Set(packages.map(\.id))
         }
-        guard !commands.isEmpty else { return }
+        guard !commands.isEmpty, busy.isDisjoint(with: ids) else { return }
 
-        isUpgrading = true
-        log = ""
-        upgradeSequence(commands)
+        let label = packages.map { $0.map(\.displayName).joined(separator: ", ") } ?? "everything"
+        perform(commands, ids: ids, success: "Updated \(label).", failure: "Couldn't update \(label).")
     }
 
-    private func upgradeSequence(_ commands: [[String]]) {
+    /// Removes one package. `zap` also deletes a cask's settings and support
+    /// files, as listed in its recipe.
+    func uninstall(_ package: BrewPackage, zap: Bool) {
+        guard !isChecking, Self.isInstalled, !busy.contains(package.id) else { return }
+        var command = ["uninstall", package.isCask ? "--cask" : "--formula"]
+        if package.isCask, zap { command.append("--zap") }
+        command.append(package.name)
+        perform([command], ids: [package.id],
+                success: "Removed \(package.displayName).",
+                failure: "Couldn't remove \(package.displayName).")
+    }
+
+    private func perform(_ commands: [[String]], ids: Set<String>, success: String, failure: String) {
+        busy.formUnion(ids)
+        lastResult = nil
+
         DispatchQueue.global(qos: .userInitiated).async {
             var combined = ""
+            var ok = true
             for command in commands {
                 let result = Self.run(command, extraEnvironment: ["HOMEBREW_NO_AUTO_UPDATE": "1"])
                 combined += String(data: result.output, encoding: .utf8) ?? ""
                 combined += result.errorText.isEmpty ? "" : "\n" + result.errorText
+                if result.status != 0 { ok = false }
             }
+            let output = combined.trimmingCharacters(in: .whitespacesAndNewlines)
+
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                isUpgrading = false
-                log = combined.trimmingCharacters(in: .whitespacesAndNewlines)
+                busy.subtract(ids)
+                log = output
+                lastResult = ok ? success : failure + " " + Self.reason(in: output)
                 check(refresh: false)
             }
         }
     }
+
+    /// The line of brew's output that says why, when it refused.
+    private static func reason(in output: String) -> String {
+        output.split(separator: "\n")
+            .first { $0.hasPrefix("Error:") || $0.contains("Refusing") || $0.contains("required by") }
+            .map { $0.replacingOccurrences(of: "Error: ", with: "") } ?? "See the output for details."
+    }
+
+    // MARK: Running brew
 
     private struct RunResult {
         let output: Data

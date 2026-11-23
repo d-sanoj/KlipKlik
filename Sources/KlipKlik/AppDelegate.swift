@@ -17,7 +17,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let snippets = SnippetExpander()
     private let finderExtras = FinderExtras()
     private let removalWatcher = AppRemovalWatcher()
-    private let dockPreview = DockPreview()
     private var statusItem: NSStatusItem!
     /// Built on first use. Constructing it eagerly cost a window, an
     /// `NSHostingController` and the whole SwiftUI view graph at launch — for a
@@ -142,7 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// The features added alongside the clipboard: paste stack, snippets,
-    /// Finder keys, the removal watcher, Homebrew checks and Dock previews.
+    /// Finder keys, the removal watcher and Homebrew checks.
     /// Each reports its own pasteboard writes to the monitor, like the popup
     /// and the shelves do, so none of them shows up in history as a copy.
     private func startExtras() {
@@ -187,11 +186,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .store(in: &cancellables)
 
         Homebrew.shared.start()
-
-        Settings.shared.$dockPreviews
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] on in on ? self?.dockPreview.start() : self?.dockPreview.stop() }
-            .store(in: &cancellables)
     }
 
     private func togglePasteStack() {
@@ -240,7 +234,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         finderExtras.stop()
         snippets.stop()
         removalWatcher.stop()
-        dockPreview.stop()
         pasteStack?.stop()
         shelves.stop()
         clockTimer?.invalidate()

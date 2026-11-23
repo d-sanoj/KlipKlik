@@ -125,7 +125,6 @@ final class Settings: ObservableObject {
         static let shelfKeepAfterDrag = "shelfKeepAfterDrag"
         static let watchRemovedApps = "watchRemovedApps"
         static let brewAutoCheck = "brewAutoCheck"
-        static let dockPreviews = "dockPreviews"
         static let cacheCleanerSkipped = "cacheCleanerSkipped"
     }
 
@@ -299,11 +298,6 @@ final class Settings: ObservableObject {
         didSet { UserDefaults.standard.set(brewAutoCheck, forKey: Key.brewAutoCheck) }
     }
 
-    /// Hovering a Dock icon shows that app's windows.
-    @Published var dockPreviews: Bool {
-        didSet { UserDefaults.standard.set(dockPreviews, forKey: Key.dockPreviews) }
-    }
-
     /// Paths the cache cleaner must never offer again.
     @Published var cacheCleanerSkipped: [String] {
         didSet { UserDefaults.standard.set(cacheCleanerSkipped, forKey: Key.cacheCleanerSkipped) }
@@ -347,7 +341,6 @@ final class Settings: ObservableObject {
             Key.shelfKeepAfterDrag: false,
             Key.watchRemovedApps: true,
             Key.brewAutoCheck: true,
-            Key.dockPreviews: true,
             Key.cacheCleanerSkipped: [String]()
         ])
 
@@ -378,7 +371,6 @@ final class Settings: ObservableObject {
         shelfKeepAfterDrag = defaults.bool(forKey: Key.shelfKeepAfterDrag)
         watchRemovedApps = defaults.bool(forKey: Key.watchRemovedApps)
         brewAutoCheck = defaults.bool(forKey: Key.brewAutoCheck)
-        dockPreviews = defaults.bool(forKey: Key.dockPreviews)
         cacheCleanerSkipped = defaults.stringArray(forKey: Key.cacheCleanerSkipped) ?? []
     }
 
