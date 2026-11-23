@@ -1,10 +1,51 @@
 import Combine
 import SwiftUI
 
+/// The popup's type filter: which kinds of item the list shows.
+enum KindFilter: String, CaseIterable, Identifiable {
+    case all, text, links, images, colors, files
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "All"
+        case .text: return "Text"
+        case .links: return "Links"
+        case .images: return "Images"
+        case .colors: return "Colours"
+        case .files: return "Files"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .all: return "square.grid.2x2"
+        case .text: return "text.alignleft"
+        case .links: return "link"
+        case .images: return "photo"
+        case .colors: return "paintpalette"
+        case .files: return "doc"
+        }
+    }
+
+    func includes(_ kind: ClipKind) -> Bool {
+        switch self {
+        case .all: return true
+        case .text: return kind == .text || kind == .rich
+        case .links: return kind == .link
+        case .images: return kind == .image
+        case .colors: return kind == .color
+        case .files: return [.file, .folder, .video, .audio].contains(kind)
+        }
+    }
+}
+
 /// Drives the popup: what's on screen, what's selected, and what the keyboard
 /// and mouse do about it.
 final class PopupViewModel: ObservableObject {
     @Published var query: String = ""
+    @Published var kindFilter: KindFilter = .all
     /// Index into `flatItems` — pinned first, then recent, matching reading order.
     @Published var selection: Int = 0
     @Published var pinnedItems: [ClipboardItem] = []
@@ -31,27 +72,31 @@ final class PopupViewModel: ObservableObject {
     var onOpenPreferences: (() -> Void)?
     var onPickColor: (() -> Void)?
     var onGrabText: (() -> Void)?
+    var onScrollCapture: (() -> Void)?
     /// Puts a file item's files on a shelf. Returns false when there was nothing
     /// shelvable, so the caller can leave the popup open rather than closing it
     /// on an action that did nothing.
     var onAddToShelf: ((ClipboardItem) -> Bool)?
     /// Whether the shelf action should be offered for this item at all.
     var canAddToShelf: ((ClipboardItem) -> Bool)?
+    /// Copies text the popup produced itself (a colour in another notation).
+    var onCopyText: ((String) -> Void)?
+    /// Opens or retargets the preview beside the popup.
+    var onPreview: ((ClipboardItem) -> Void)?
+    /// Floats an item on the screen, above every window.
+    var onFloat: ((ClipboardItem) -> Void)?
 
     private var cancellables = Set<AnyCancellable>()
 
     init(store: HistoryStore) {
         self.store = store
 
-        Publishers.CombineLatest(store.$items, $query)
-            .sink { [weak self] items, query in
+        Publishers.CombineLatest3(store.$items, $query, $kindFilter)
+            .sink { [weak self] items, query, kindFilter in
                 guard let self else { return }
                 let trimmed = query.trimmingCharacters(in: .whitespaces)
-                let filtered = trimmed.isEmpty ? items : items.filter {
-                    $0.title.range(
-                        of: trimmed,
-                        options: [.caseInsensitive, .diacriticInsensitive]
-                    ) != nil
+                let filtered = items.filter {
+                    kindFilter.includes($0.kind) && (trimmed.isEmpty || Self.matches($0, trimmed))
                 }
                 pinnedItems = filtered.filter(\.pinned)
                 recentItems = filtered.filter { !$0.pinned }
@@ -59,6 +104,30 @@ final class PopupViewModel: ObservableObject {
                 selection = min(selection, max(pinnedItems.count + recentItems.count - 1, 0))
             }
             .store(in: &cancellables)
+    }
+
+    /// The search matches the row's title, the full text, and the words read
+    /// out of a copied picture — so a screenshot is found by what it says.
+    private static func matches(_ item: ClipboardItem, _ query: String) -> Bool {
+        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+        if item.title.range(of: query, options: options) != nil { return true }
+        // The first 50,000 characters: enough for anything a person searches a
+        // clipboard for, and a cap on the cost of a huge copy per keystroke.
+        if let text = item.plainText, text.prefix(50_000).range(of: query, options: options) != nil {
+            return true
+        }
+        if let text = item.recognizedText, text.range(of: query, options: options) != nil { return true }
+        return false
+    }
+
+    /// Tab and ⇧Tab step through the type filters.
+    func cycleKindFilter(by step: Int) {
+        let all = KindFilter.allCases
+        let index = all.firstIndex(of: kindFilter) ?? 0
+        kindFilter = all[(index + step + all.count) % all.count]
+        selection = 0
+        selectionVisible = false
+        scrollTick += 1
     }
 
     /// What the list is actually showing: the history, or the pinned shelf
@@ -74,6 +143,7 @@ final class PopupViewModel: ObservableObject {
     /// What to say when the list has nothing in it.
     var emptyMessage: String {
         if !query.trimmingCharacters(in: .whitespaces).isEmpty { return "No matches" }
+        if kindFilter != .all { return "No \(kindFilter.title.lowercased()) yet" }
         return showingPinned ? "Nothing pinned yet" : "Nothing copied yet"
     }
 
@@ -102,6 +172,7 @@ final class PopupViewModel: ObservableObject {
 
     func resetForShow() {
         query = ""
+        kindFilter = .all
         selection = 0
         selectionVisible = false
         showingPinned = false
@@ -180,6 +251,35 @@ final class PopupViewModel: ObservableObject {
     func addSelectedToShelf() {
         guard let item = selectedItem else { return }
         addToShelf(item)
+    }
+
+    /// The context menu's "Copy Colour As".
+    func copyColor(_ item: ClipboardItem, as format: ColorFormat) {
+        guard let hex = item.colorHex, let components = ColorFormat.components(fromHex: hex)
+        else { return }
+        onCopyText?(format.string(for: components))
+    }
+
+    func preview(_ item: ClipboardItem) {
+        onPreview?(item)
+    }
+
+    func float(_ item: ClipboardItem) {
+        onFloat?(item)
+    }
+
+    /// ⌥F on the selected row.
+    func floatSelected() {
+        guard let item = selectedItem else { return }
+        onFloat?(item)
+    }
+
+    /// Space and ⌘Y. Reveals the selection too, so it is clear which row the
+    /// preview belongs to.
+    func previewSelected() {
+        guard let item = selectedItem else { return }
+        selectionVisible = true
+        onPreview?(item)
     }
 
     /// Footer "Clear History" — keeps pinned items.

@@ -17,13 +17,15 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.2.1</string>
+	<string>2.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>8</string>
+	<string>9</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>KlipKlik asks Finder which folder is open, to save a pasted picture there, and what is selected, to send it to a shelf.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>MIT Licensed</string>
 	<key>NSSupportsAutomaticTermination</key>

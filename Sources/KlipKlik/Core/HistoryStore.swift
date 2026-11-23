@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ImageIO
 
 /// Clipboard history, held in memory and backed by `DiskStore`.
 ///
@@ -96,7 +97,10 @@ final class HistoryStore: ObservableObject {
         // A re-copy of something already recorded moves back to the top rather
         // than creating a duplicate row, and keeps its pinned state.
         if let existing = items.firstIndex(where: { $0.fingerprint == item.fingerprint }) {
-            let moved = items.remove(at: existing)
+            var moved = items.remove(at: existing)
+            // A fresh copy restarts the age limit's clock, or a re-copied item
+            // could be swept seconds after arriving back on top.
+            moved.touchedAt = item.createdAt
             items.insert(moved, at: 0)
             return
         }
@@ -104,7 +108,60 @@ final class HistoryStore: ObservableObject {
         items.insert(item, at: 0)
         applyLimit()
         compactImageBytes(of: item)
+        readTextIfPicture(item)
         startOffloadTimerIfNeeded()
+    }
+
+    // MARK: Words in pictures
+
+    /// Reads the words out of a copied picture, so searching history finds a
+    /// screenshot by what it says. On a background queue, one at a time —
+    /// recognising a full-screen grab takes the better part of a second, and
+    /// none of that belongs on the thread that draws the popup.
+    private func readTextIfPicture(_ item: ClipboardItem) {
+        guard item.kind == .image, let representations = item.representations else { return }
+        let id = item.id
+        Self.recognitionQueue.async {
+            guard let image = Self.picture(in: representations),
+                  let text = TextGrab.readText(in: image)?
+                      .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty
+            else { return }
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let index = items.firstIndex(where: { $0.id == id }) else { return }
+                items[index].recognizedText = text
+                if items[index].pinned { disk.saveIndex(items) }
+            }
+        }
+    }
+
+    private static let recognitionQueue = DispatchQueue(
+        label: "com.sanoj.KlipKlik.recognition", qos: .utility
+    )
+
+    /// The picture a copy carries: its image bytes, or the image file it names.
+    private static func picture(in representations: [[String: Data]]) -> CGImage? {
+        let imageKeys = [
+            NSPasteboard.PasteboardType.png.rawValue, NSPasteboard.PasteboardType.tiff.rawValue,
+            "public.jpeg", "public.heic", "com.compuserve.gif"
+        ]
+        for bag in representations {
+            for key in imageKeys {
+                if let data = bag[key], let source = CGImageSourceCreateWithData(data as CFData, nil),
+                   let image = CGImageSourceCreateImageAtIndex(source, 0, nil) {
+                    return image
+                }
+            }
+            if let data = bag[NSPasteboard.PasteboardType.fileURL.rawValue],
+               let string = String(data: data, encoding: .utf8),
+               let url = URL(string: string), url.isFileURL,
+               let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) {
+                return image
+            }
+        }
+        return nil
     }
 
     /// Shrinks an item's image bytes just after capture.
@@ -178,7 +235,7 @@ final class HistoryStore: ObservableObject {
         disk.clearCache()
     }
 
-    /// Storage ▸ "Clear All History", and the daily purge. Clears the session
+    /// History & Data ▸ "Clear History", and the daily purge. Clears the session
     /// and its swap, but leaves the pinned archive alone — pinned items are the
     /// one thing the user asked to keep, and a daily timer should not decide
     /// otherwise.
@@ -199,6 +256,19 @@ final class HistoryStore: ObservableObject {
         offloadTimer?.invalidate()
         items.removeAll { !$0.pinned }
         disk.clearCache()
+    }
+
+    /// Drops unpinned items older than the history age limit, if one is set.
+    /// Runs on the purge's sweep and as the popup opens.
+    func pruneExpired(now: Date = Date()) {
+        guard let maxAge = Settings.shared.historyMaxAge.interval else { return }
+        let cutoff = now.addingTimeInterval(-maxAge)
+        let expired = items.filter { !$0.pinned && ($0.touchedAt ?? $0.createdAt) < cutoff }
+        guard !expired.isEmpty else { return }
+
+        let ids = Set(expired.map(\.id))
+        for item in expired { disk.delete(item) }
+        items.removeAll { ids.contains($0.id) }
     }
 
     /// Trims to the configured history size, evicting oldest first. Pinned items

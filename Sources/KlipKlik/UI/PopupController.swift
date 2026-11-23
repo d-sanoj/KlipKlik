@@ -17,6 +17,7 @@ final class PopupController: NSObject, NSWindowDelegate {
 
     private let panel: PopupPanel
     private let detailCard = DetailCardWindow()
+    private let previewWindow = PreviewWindow()
     private let regionSelector = RegionSelector()
     /// Pending first appearance of the detail card, cancelled if focus moves on.
     private var detailDelay: DispatchWorkItem?
@@ -91,6 +92,24 @@ final class PopupController: NSObject, NSWindowDelegate {
         viewModel.onOpenPreferences = { [weak self] in self?.onOpenPreferences?() }
         viewModel.onPickColor = { [weak self] in self?.pickColor() }
         viewModel.onGrabText = { [weak self] in self?.grabText() }
+        viewModel.onScrollCapture = { [weak self] in
+            // Out of the way first, or the popup would be part of the page.
+            self?.hide()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { ScrollCapture.shared.start() }
+        }
+        viewModel.onPreview = { [weak self] item in self?.togglePreview(item) }
+        viewModel.onFloat = { [weak self] item in
+            guard let self else { return }
+            hide()
+            FloatingCards.shared.float(viewModel.store.materialized(item))
+        }
+        viewModel.onCopyText = { [weak self] text in
+            self?.hide()
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+            // Not reported as ours: the new notation belongs in history.
+        }
 
         // The list reports the focused row's position; the card follows it,
         // whether focus moved by pointer or by arrow key.
@@ -191,9 +210,37 @@ final class PopupController: NSObject, NSWindowDelegate {
         }
     }
 
+    // MARK: Preview
+
+    /// Shows `item` beside the popup, or closes the preview when it is already
+    /// showing that item.
+    private func togglePreview(_ item: ClipboardItem) {
+        if previewWindow.isVisible, previewWindow.itemID == item.id {
+            previewWindow.hide()
+            return
+        }
+        dismissDetailCard()
+        previewWindow.show(item: viewModel.store.materialized(item), beside: panel)
+    }
+
+    /// Keeps an open preview on the selected row as the arrow keys move it.
+    private func followSelectionWithPreview() {
+        guard previewWindow.isVisible, let item = viewModel.selectedItem,
+              item.id != previewWindow.itemID
+        else { return }
+        previewWindow.show(item: viewModel.store.materialized(item), beside: panel)
+    }
+
     // MARK: Detail card
 
     private func updateDetailCard(_ row: FocusedRow?) {
+        // The preview already says everything the card would, and both sit
+        // left of the popup — only one of them at a time.
+        if previewWindow.isVisible {
+            dismissDetailCard()
+            followSelectionWithPreview()
+            return
+        }
         guard panel.isVisible,
               let row,
               let item = viewModel.flatItems.first(where: { $0.id == row.id })
@@ -265,6 +312,7 @@ final class PopupController: NSObject, NSWindowDelegate {
     func hide() {
         removeKeyMonitor()
         dismissDetailCard()
+        previewWindow.hide()
         panel.orderOut(nil)
     }
 
@@ -381,7 +429,23 @@ final class PopupController: NSObject, NSWindowDelegate {
 
         switch Int(event.keyCode) {
         case kVK_Escape:
-            hide()
+            // The preview is the inner layer: Esc closes it before the popup.
+            previewWindow.isVisible ? previewWindow.hide() : hide()
+            return true
+
+        // Space previews only while the search is empty — once something has
+        // been typed, a space is part of the search.
+        case kVK_Space where !command && !option && viewModel.query.isEmpty:
+            viewModel.previewSelected()
+            return true
+
+        case kVK_ANSI_Y where command:
+            viewModel.previewSelected()
+            return true
+
+        // Tab and ⇧Tab step through the type filters.
+        case kVK_Tab:
+            viewModel.cycleKindFilter(by: shift ? -1 : 1)
             return true
 
         case kVK_DownArrow:
@@ -403,6 +467,10 @@ final class PopupController: NSObject, NSWindowDelegate {
 
         case kVK_ANSI_S where option:
             viewModel.addSelectedToShelf()
+            return true
+
+        case kVK_ANSI_F where option:
+            viewModel.floatSelected()
             return true
 
         case kVK_Delete where command && option:

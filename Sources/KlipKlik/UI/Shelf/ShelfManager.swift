@@ -86,7 +86,9 @@ final class ShelfManager {
     /// set to open shelves by hand.
     private func applyEnabledState() {
         let enabled = Settings.shared.shelvesEnabled
-        if enabled, Settings.shared.shelfTrigger == .automatic {
+        let trigger = Settings.shared.shelfTrigger
+        if enabled, trigger != .manual {
+            watcher.requiresShake = trigger == .shake
             watcher.start()
         } else {
             watcher.stop()
@@ -147,6 +149,22 @@ final class ShelfManager {
         pendingEntrance = .none
     }
 
+    /// Puts files on the newest shelf, or a new one — Finder's "send the
+    /// selection to a shelf" key.
+    func addFiles(_ urls: [URL]) {
+        guard Settings.shared.shelvesEnabled, !urls.isEmpty else { return }
+        let id: UUID
+        if let existing = store.shelves.last?.id {
+            id = existing
+        } else {
+            pendingEntrance = .appear
+            id = store.addShelf().id
+            pendingEntrance = .none
+        }
+        store.add(urls: urls, to: id)
+        controllers[id]?.show()
+    }
+
     func closeAllShelves() {
         store.removeAllShelves()
     }
@@ -170,16 +188,7 @@ final class ShelfManager {
 
         // The newest shelf, or a new one — dropping into whichever shelf is
         // already open is what the user means by "add to shelf" when there is one.
-        let id: UUID
-        if let existing = store.shelves.last?.id {
-            id = existing
-        } else {
-            pendingEntrance = .appear
-            id = store.addShelf().id
-            pendingEntrance = .none
-        }
-        store.add(urls: urls, to: id)
-        controllers[id]?.show()
+        addFiles(urls)
         return true
     }
 

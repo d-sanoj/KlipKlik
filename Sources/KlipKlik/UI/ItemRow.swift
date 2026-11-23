@@ -18,9 +18,19 @@ struct ItemRow: View {
     /// rather than shown greyed out on every row of text.
     var canShelve: Bool = false
     var onAddToShelf: () -> Void = {}
+    /// Leading app icon, per `Settings.showSourceIcons`.
+    var showsSourceIcon: Bool = false
+    /// Copies a colour item in another notation. See `colorMenu`.
+    var onCopyColor: (ColorFormat) -> Void = { _ in }
+    var onPreview: () -> Void = {}
+    var onFloat: () -> Void = {}
 
     var body: some View {
         HStack(spacing: Metrics.rowSpacing) {
+            if showsSourceIcon {
+                SourceIcon(item: item, palette: palette)
+            }
+
             Text(item.title)
                 .font(.system(size: 13))
                 .lineLimit(1)
@@ -57,9 +67,24 @@ struct ItemRow: View {
     private var menu: some View {
         Button("Paste") { onActivate(false) }
         Button(item.pinned ? "Unpin" : "Pin", action: onTogglePin)
+        Button("Preview", action: onPreview)
+        Button("Float on Screen", action: onFloat)
         if canShelve {
             Divider()
             Button("Add to Shelf", action: onAddToShelf)
+        }
+        if item.kind == .color, item.colorHex.flatMap(ColorFormat.components(fromHex:)) != nil {
+            Divider()
+            colorMenu
+        }
+    }
+
+    /// Re-copies a colour as RGB, HSL or SwiftUI without picking it again.
+    private var colorMenu: some View {
+        Menu("Copy Colour As") {
+            ForEach(ColorFormat.allCases) { format in
+                Button(format.label) { onCopyColor(format) }
+            }
         }
     }
 

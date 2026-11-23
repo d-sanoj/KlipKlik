@@ -65,7 +65,7 @@ it launches without the `xattr` step.
 
 ### Uninstall
 
-**Settings ▸ Storage ▸ Uninstall KlipKlik…** revokes both permissions, removes
+**Settings ▸ History & Data ▸ Uninstall KlipKlik…** revokes both permissions, removes
 the login item, and deletes every stored setting, then offers to move the app to
 the Trash. Dragging the app to the Trash on its own leaves the privacy grants
 behind, and macOS matches those by bundle identifier — so a later reinstall
@@ -78,6 +78,8 @@ inherits them.
 | `./Scripts/build_app.sh` | Debug build, faster to compile |
 | `./Scripts/make_dmg.sh` | Package a disk image |
 | `./Scripts/make_icon.sh` | Rebuild the icon after editing `Resources/AppIcon.png` |
+| `./Scripts/make_signing_cert.sh` | Once per Mac: a local signing certificate, so permissions survive rebuilds |
+| `./Scripts/test.sh` | Run the unit tests |
 | `KLIPKLIK_ICON_RADIUS=0.12` | Tighter icon corners (default `0.18`) |
 | `KLIPKLIK_SIGN_IDENTITY="…"` | Sign with a real identity so permissions survive rebuilds |
 | `KLIPKLIK_DEBUG=1` | Log every clipboard capture to stderr |
@@ -181,7 +183,7 @@ do not survive quitting by default, and why anything dragged in from Finder is
 referenced rather than copied — the case that would stage bytes is the
 uncommon one.
 
-**Settings ▸ Storage** shows all four figures — memory, cache, archive, and
+**Settings ▸ History & Data** shows all four figures — memory, cache, archive, and
 bytes staged for shelves — and clears each independently.
 
 ## Shortcuts
@@ -224,8 +226,14 @@ each one its own **Open Settings…** and **Reset permission** button.
 > permissions to the code signature — which changes on every rebuild, silently
 > invalidating the grant. The entry in System Settings still looks enabled but
 > no longer matches, and toggling it off and on will not fix it; only a reset
-> will. Set `KLIPKLIK_SIGN_IDENTITY` to a real signing identity to avoid this
-> entirely. Screen Recording additionally needs a relaunch to take effect.
+> will. Run `./Scripts/make_signing_cert.sh` once to create a local signing
+> certificate — `build_app.sh` then signs every build with it, so grants
+> survive rebuilds — or set `KLIPKLIK_SIGN_IDENTITY` to a real signing
+> identity. Screen Recording additionally needs a relaunch to take effect.
+>
+> Every build is signed with the hardened runtime and
+> `Resources/KlipKlik.entitlements`, as notarization requires. The one
+> entitlement lets KlipKlik send Apple Events to Finder.
 
 ## Development
 

@@ -12,6 +12,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var finderCutMove: FinderCutMove!
     private var shelves: ShelfManager!
     private var fallbackHotKey: CarbonHotKey?
+    private var pasteStackHotKey: CarbonHotKey?
+    private var pasteStack: PasteStack!
+    private let snippets = SnippetExpander()
+    private let finderExtras = FinderExtras()
+    private let removalWatcher = AppRemovalWatcher()
     private var statusItem: NSStatusItem!
     /// Built on first use. Constructing it eagerly cost a window, an
     /// `NSHostingController` and the whole SwiftUI view graph at launch — for a
@@ -33,6 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var timeZoneMenuItem: NSMenuItem!
     private var stripFormattingItem: NSMenuItem!
     private var newShelfItem: NSMenuItem!
+    private var pasteStackItem: NSMenuItem!
+    private var restoreLinkItem: NSMenuItem!
+    /// The Mac tools' live submenus.
+    private let menuTools = MenuBarTools()
     /// Disabled row at the top of the Timezone submenu naming the current zone.
     private var selectedZoneHeader: NSMenuItem!
 
@@ -61,6 +70,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .dropFirst()
             .sink { [weak self] _ in
                 DispatchQueue.main.async { self?.store.applyLimit() }
+            }
+            .store(in: &cancellables)
+
+        // Shortening the age limit applies at once, like the size limit.
+        Settings.shared.$historyMaxAge
+            .dropFirst()
+            .sink { [weak self] _ in
+                DispatchQueue.main.async { self?.store.pruneExpired() }
             }
             .store(in: &cancellables)
 
@@ -103,6 +120,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         finderCutMove.start()
 
+        startExtras()
+
         // First run is otherwise silent — no Dock icon, no window, just a new
         // clock in the menu bar that nobody asked about. Say hello once, and let
         // that window ask for the permissions.
@@ -122,6 +141,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// The features added alongside the clipboard: paste stack, snippets,
+    /// Finder keys, the removal watcher and Homebrew checks.
+    /// Each reports its own pasteboard writes to the monitor, like the popup
+    /// and the shelves do, so none of them shows up in history as a copy.
+    private func startExtras() {
+        let ignore: (Int) -> Void = { [weak self] changeCount in
+            self?.monitor.ignoreChangeCount(changeCount)
+        }
+
+        pasteStack = PasteStack(store: store)
+        pasteStack.onDidWriteToPasteboard = ignore
+        pasteStack.$isActive
+            .combineLatest(pasteStack.$queue)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, _ in self?.refreshStatusIcon() }
+            .store(in: &cancellables)
+        monitor.onCapture = { [weak self] item in self?.pasteStack.collect(item) }
+        // ⌃⌥⌘C: start or stop collecting. Carbon, so it needs no permission.
+        pasteStackHotKey = CarbonHotKey(
+            keyCode: UInt32(kVK_ANSI_C),
+            modifiers: UInt32(cmdKey | optionKey | controlKey)
+        ) { [weak self] in
+            self?.togglePasteStack()
+        }
+
+        FloatingCards.shared.onDidWriteToPasteboard = ignore
+
+        snippets.onDidWriteToPasteboard = ignore
+        snippets.start()
+
+        finderExtras.onAddToShelf = { [weak self] urls in self?.shelves.addFiles(urls) }
+        finderExtras.start()
+        monitor.onPasteboardChange = { [weak self] in self?.finderExtras.update() }
+        Settings.shared.$finderRenameKey.map { _ in () }
+            .merge(with: Settings.shared.$finderPasteImage.map { _ in () },
+                   Settings.shared.$shelvesEnabled.map { _ in () })
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.finderExtras.update() }
+            .store(in: &cancellables)
+
+        removalWatcher.onAppRemoved = { [weak self] removed in self?.offerCleanup(after: removed) }
+        Settings.shared.$watchRemovedApps
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] on in on ? self?.removalWatcher.start() : self?.removalWatcher.stop() }
+            .store(in: &cancellables)
+
+        Homebrew.shared.start()
+    }
+
+    private func togglePasteStack() {
+        if !pasteStack.isActive, !AccessibilityPermission.isTrusted {
+            let alert = NSAlert()
+            alert.messageText = "Paste stack needs Accessibility"
+            alert.informativeText = "Each ⌘V is handed back to the app you are pasting into, "
+                + "which needs Accessibility. Turn it on for KlipKlik, then start the stack again."
+            alert.addButton(withTitle: "Open Settings…")
+            alert.addButton(withTitle: "Later")
+            if FloatingAlert.run(alert) == .alertFirstButtonReturn { AccessibilityPermission.allow() }
+            return
+        }
+        pasteStack.toggle()
+    }
+
+    /// An app left Applications and left files behind: offer to clear them.
+    private func offerCleanup(after removed: AppRemovalWatcher.RemovedApp) {
+        let total = removed.leftovers.reduce(Int64(0)) { $0 + ($1.size ?? 0) }
+        let alert = NSAlert()
+        alert.messageText = "\(removed.name) left \(removed.leftovers.count) "
+            + "item\(removed.leftovers.count == 1 ? "" : "s") behind"
+        alert.informativeText = "Its settings, caches and support files (\(formattedBytes(total))) "
+            + "are still on this Mac. Review them before anything is removed."
+        alert.addButton(withTitle: "Review…")
+        alert.addButton(withTitle: "Not Now")
+        guard FloatingAlert.run(alert) == .alertFirstButtonReturn else { return }
+        showPreferences(.uninstall)
+        preferences?.pages.tools.uninstall.show(removed: removed)
+    }
+
     private func showOnboarding(mode: OnboardingView.Mode) {
         let controller = OnboardingWindowController(mode: mode)
         // Held only while it is on screen. Keeping it after the close kept its
@@ -136,6 +234,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         monitor.stop()
         doubleTap.stop()
         finderCutMove.stop()
+        finderExtras.stop()
+        snippets.stop()
+        removalWatcher.stop()
+        pasteStack?.stop()
         shelves.stop()
         clockTimer?.invalidate()
         // Pinned items are an archive and stay; everything else, including its
@@ -192,19 +294,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard title != lastClockTitle else { return }
         lastClockTitle = title
         button.title = title
-        button.toolTip = cutPending
-            ? "Cut pending — press ⌘ V in another folder to move"
-            : "KlipKlik — \(zone.identifier.replacingOccurrences(of: "_", with: " "))"
+        if cutPending {
+            button.toolTip = "Cut pending — press ⌘ V in another folder to move"
+        } else if let stack = pasteStack, stack.isActive {
+            button.toolTip = "Paste stack — \(stack.queue.count) waiting. ⌃⌥⌘C stops it."
+        } else {
+            button.toolTip = "KlipKlik — \(zone.identifier.replacingOccurrences(of: "_", with: " "))"
+        }
     }
 
     /// Scissors while a Finder cut is waiting to be pasted, so an armed cut is
     /// visible rather than silent. No glyph otherwise: the time is the item.
     private func setStatusIcon(cutPending: Bool) {
         self.cutPending = cutPending
+        refreshStatusIcon()
+    }
+
+    /// Scissors win over the stack: a pending cut is the more urgent thing to
+    /// know about, and it clears itself on the next paste.
+    private func refreshStatusIcon() {
         guard let button = statusItem?.button else { return }
-        button.image = cutPending
-            ? NSImage(systemSymbolName: "scissors", accessibilityDescription: "Cut pending")
-            : nil
+        if cutPending {
+            button.image = NSImage(systemSymbolName: "scissors", accessibilityDescription: "Cut pending")
+        } else if pasteStack?.isActive == true {
+            button.image = NSImage(
+                systemSymbolName: "square.stack.3d.up", accessibilityDescription: "Paste stack on"
+            )
+        } else {
+            button.image = nil
+        }
         button.image?.isTemplate = true
         button.imagePosition = .imageLeading
         lastClockTitle = nil
@@ -217,59 +335,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return window.convertToScreen(button.convert(button.bounds, to: nil))
     }
 
+    /// The menu behind the clock.
+    ///
+    /// Grouped under headings, with a symbol on every row so the eye can find
+    /// a row by its picture: what you use while copying first, then the Mac
+    /// tools — each one a row of its own, not a submenu to hunt through — then
+    /// the app itself.
     private func buildStatusMenu() -> NSMenu {
         let menu = NSMenu()
         // Offsets move with DST and the selection can change elsewhere, so the
         // titles are refreshed each time the menu is about to open.
         menu.delegate = self
 
-        menu.addItem(
-            withTitle: "Clipboard",
-            action: #selector(openPopup),
-            keyEquivalent: ""
-        ).target = self
+        menu.addItem(.sectionHeader(title: "Clipboard"))
 
-        newShelfItem = menu.addItem(
-            withTitle: "New Shelf",
-            action: #selector(newShelf),
-            keyEquivalent: ""
-        )
-        newShelfItem.target = self
+        addItem(to: menu, "Clipboard History", symbol: "doc.on.clipboard",
+                action: #selector(openPopup), key: "c", modifiers: [.shift, .command])
+
+        newShelfItem = addItem(to: menu, "New Shelf", symbol: "tray.2",
+                               action: #selector(newShelf), key: "s", modifiers: [.option, .command])
+
+        pasteStackItem = addItem(to: menu, "Start Paste Stack", symbol: "square.stack.3d.up",
+                                 action: #selector(togglePasteStackFromMenu),
+                                 key: "c", modifiers: [.control, .option, .command])
+
+        addItem(to: menu, "Scrolling Screenshot", symbol: "scroll", action: #selector(startScrollCapture))
 
         // Same wording as the Preferences row, and the same underlying setting:
         // this is that switch, not a second one that could disagree with it.
-        stripFormattingItem = menu.addItem(
-            withTitle: "Strip Format when pasting",
-            action: #selector(toggleStripFormatting),
-            keyEquivalent: ""
-        )
-        stripFormattingItem.target = self
+        stripFormattingItem = addItem(to: menu, "Strip Format when pasting", symbol: "textformat",
+                                      action: #selector(toggleStripFormatting))
 
-        timeZoneMenuItem = menu.addItem(withTitle: "Timezone", action: nil, keyEquivalent: "")
+        // Shown only while the clipboard holds a link this cleaned.
+        restoreLinkItem = addItem(to: menu, "Restore Original Link", symbol: "link.badge.plus",
+                                  action: #selector(restoreOriginalLink))
+
+        menu.addItem(.separator())
+        menu.addItem(.sectionHeader(title: "Mac Tools"))
+
+        menuTools.openPage = { [weak self] page in self?.showPreferences(page) }
+        menuTools.install(into: menu)
+
+        menu.addItem(.separator())
+        menu.addItem(.sectionHeader(title: "KlipKlik"))
+
+        timeZoneMenuItem = addItem(to: menu, "Timezone", symbol: "globe", action: nil)
         timeZoneMenuItem.submenu = buildTimeZoneMenu()
 
-        menu.addItem(
-            withTitle: "Settings",
-            action: #selector(openPreferences),
-            keyEquivalent: ","
-        ).target = self
+        addItem(to: menu, "Settings…", symbol: "gearshape", action: #selector(openPreferences),
+                key: ",", modifiers: [.command])
 
-        // The only rule in the menu: everything above is the app, Quit is not.
         menu.addItem(.separator())
 
-        // Routed through our own selector rather than `terminate:`: macOS
-        // decorates the standard action with a symbol, and setting `image` to
-        // nil does not remove it. Nothing else here has an icon, so it read as
-        // a stray mark.
-        let quit = menu.addItem(
-            withTitle: "Quit",
-            action: #selector(quitApp),
-            keyEquivalent: "q"
-        )
-        quit.target = self
-        quit.image = nil
+        // Routed through our own selector rather than `terminate:`, so the
+        // symbol is ours and matches the rest of the menu.
+        addItem(to: menu, "Quit KlipKlik", symbol: "power", action: #selector(quitApp),
+                key: "q", modifiers: [.command])
 
         return menu
+    }
+
+    /// One row: title, symbol, and the key it shows. The key is shown for the
+    /// shortcuts that also work outside the menu, so the menu teaches them.
+    @discardableResult
+    private func addItem(
+        to menu: NSMenu,
+        _ title: String,
+        symbol: String,
+        action: Selector?,
+        key: String = "",
+        modifiers: NSEvent.ModifierFlags = []
+    ) -> NSMenuItem {
+        let item = menu.addItem(withTitle: title, action: action, keyEquivalent: key)
+        if !key.isEmpty { item.keyEquivalentModifierMask = modifiers }
+        item.target = action == nil ? nil : self
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        return item
     }
 
     /// Every zone on the system, grouped by region:
@@ -532,7 +673,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Hidden rather than disabled: a permanently greyed row for a feature you
         // turned off is just clutter explaining itself.
         newShelfItem?.isHidden = !Settings.shared.shelvesEnabled
+
+        if let stack = pasteStack {
+            pasteStackItem?.title = stack.isActive
+                ? "Stop Paste Stack (\(stack.queue.count) waiting)"
+                : "Start Paste Stack"
+        }
+        restoreLinkItem?.isHidden = !monitor.linkCleaner.canRestore
+
+        menuTools.refreshTitles()
     }
+
+    @objc private func togglePasteStackFromMenu() { togglePasteStack() }
+
+    @objc private func startScrollCapture() {
+        // After the menu has closed, so it is not in the first shot.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { ScrollCapture.shared.start() }
+    }
+
+    @objc private func restoreOriginalLink() { monitor.linkCleaner.restoreOriginal() }
+
 
     @objc private func openPopup() { popup.show() }
 
@@ -540,11 +700,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openPreferences() { showPreferences() }
 
-    private func showPreferences() {
+    private func showPreferences(_ page: SettingsPage? = nil) {
         if preferences == nil {
             preferences = PreferencesWindowController(store: store)
         }
-        preferences?.show()
+        preferences?.show(page)
     }
 
     // MARK: Triggers
@@ -580,8 +740,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             forName: Notification.Name("com.sanoj.KlipKlik.preferences"),
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            self?.showPreferences()
+        ) { [weak self] note in
+            self?.showPreferences((note.object as? String).flatMap(SettingsPage.init(rawValue:)))
         }
         // Opens a shelf, and fills it with whatever paths the notification
         // carries. The shelf is a drag target, and a drag is the one gesture
@@ -598,6 +758,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let urls = paths.split(separator: "|").map { URL(fileURLWithPath: String($0)) }
                 shelves.store.add(urls: urls, to: shelf.id)
             }
+        }
+
+        // Opens the KlipKlik window at a page ("uninstall", "cache", "shelf"…),
+        // for driving it from scripts during development.
+        center.addObserver(
+            forName: Notification.Name("com.sanoj.KlipKlik.tools"),
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            let page = (note.object as? String).flatMap(SettingsPage.init(rawValue:)) ?? .uninstall
+            self?.showPreferences(page)
+        }
+
+        // Pops one Mac Tools submenu ("cache", "ports", "homebrew",
+        // "uninstall") up near the top-left of the main screen and closes it
+        // again, so the menus can be looked at without clicking.
+        center.addObserver(
+            forName: Notification.Name("com.sanoj.KlipKlik.previewMenu"),
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let name = note.object as? String, let screen = NSScreen.main else { return }
+            let point = NSPoint(x: screen.frame.minX + 200, y: screen.frame.maxY - 120)
+            // Not from inside this block: it runs on the main dispatch queue,
+            // and a menu tracking inside it would hold that queue — the very
+            // queue the menu's live updates arrive on.
+            RunLoop.main.perform {
+                self?.menuTools.popUpForPreview(name, at: point)
+            }
+        }
+
+        // Starts a scrolling capture exactly as the menu does, drag included.
+        center.addObserver(
+            forName: Notification.Name("com.sanoj.KlipKlik.scrollCaptureStart"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            ScrollCapture.shared.start()
+        }
+
+        // Scrolling capture of "x,y,width,height" (top-left screen points),
+        // skipping the drag — the drag is the one step a script cannot do.
+        center.addObserver(
+            forName: Notification.Name("com.sanoj.KlipKlik.scrollCapture"),
+            object: nil,
+            queue: .main
+        ) { note in
+            let parts = (note.object as? String)?.split(separator: ",").compactMap { Double($0) } ?? []
+            guard parts.count == 4 else { return }
+            ScrollCapture.shared.capture(CGRect(x: parts[0], y: parts[1], width: parts[2], height: parts[3]))
         }
 
         // Shows the notch drop pad. A drag cannot be synthesised at all — it is a

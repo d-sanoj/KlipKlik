@@ -28,6 +28,10 @@ final class DiskStore {
         let plainText: String?
         let colorHex: String?
         let sourceApp: String?
+        /// Optional, like `restoresTIFF`, so older indexes still decode.
+        var sourceBundleID: String?
+        /// Words read out of a pinned picture, so it stays searchable.
+        var recognizedText: String?
         let createdAt: Date
         let fingerprint: String
         var pinned: Bool
@@ -165,7 +169,9 @@ final class DiskStore {
         let stubs = items.filter(\.pinned).map {
             Stub(
                 id: $0.id, kind: $0.kind, title: $0.title, plainText: $0.plainText,
-                colorHex: $0.colorHex, sourceApp: $0.sourceApp, createdAt: $0.createdAt,
+                colorHex: $0.colorHex, sourceApp: $0.sourceApp,
+                sourceBundleID: $0.sourceBundleID, recognizedText: $0.recognizedText,
+                createdAt: $0.createdAt,
                 fingerprint: $0.fingerprint, pinned: true, restoresTIFF: $0.restoresTIFF
             )
         }
@@ -192,12 +198,15 @@ final class DiskStore {
         }
 
         return stubs.map {
-            ClipboardItem(
+            var item = ClipboardItem(
                 id: $0.id, kind: $0.kind, title: $0.title, plainText: $0.plainText,
                 colorHex: $0.colorHex, representations: nil, sourceApp: $0.sourceApp,
-                createdAt: $0.createdAt, fingerprint: $0.fingerprint, pinned: true,
+                sourceBundleID: $0.sourceBundleID, createdAt: $0.createdAt,
+                fingerprint: $0.fingerprint, pinned: true,
                 restoresTIFF: $0.restoresTIFF ?? false
             )
+            item.recognizedText = $0.recognizedText
+            return item
         }
     }
 

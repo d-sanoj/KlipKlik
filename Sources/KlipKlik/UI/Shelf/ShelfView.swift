@@ -446,6 +446,8 @@ struct ShelfView: View {
             menu.addItem(parent)
         }
 
+        addMediaItems(for: item, to: menu)
+
         menu.addItem(.separator())
         menu.addItem(ShelfMenuItem(title: "Copy") { ShelfActions.copyToClipboard([item.url]) })
         menu.addItem(ShelfMenuItem(title: "Copy Path") { ShelfActions.copyPaths([item.url]) })
@@ -457,6 +459,68 @@ struct ShelfView: View {
         })
 
         return menu
+    }
+
+    /// Convert, resize and compress, for pictures, videos and audio. The new
+    /// file lands beside the original and joins this shelf, ready to drag out.
+    private func addMediaItems(for item: ShelfItem, to menu: NSMenu) {
+        guard let kind = MediaConverter.kind(of: item.url) else { return }
+        let source = item.url
+        let shelfID = shelfID
+        let store = store
+        let addToShelf: (URL) -> Void = { url in store.add(urls: [url], to: shelfID) }
+
+        menu.addItem(.separator())
+
+        let formats = MediaConverter.formats(for: source)
+        if !formats.isEmpty {
+            let parent = NSMenuItem(title: "Convert To", action: nil, keyEquivalent: "")
+            let submenu = NSMenu()
+            for format in formats {
+                submenu.addItem(ShelfMenuItem(title: format.title) {
+                    ConversionCenter.shared.run(
+                        "\(source.lastPathComponent) → \(format.title)", onSuccess: addToShelf
+                    ) { progress, completion in
+                        MediaConverter.convert(source, to: format, progress: progress, completion: completion)
+                    }
+                })
+            }
+            if !FFmpeg.isInstalled, kind != .image {
+                submenu.addItem(.separator())
+                let hint = NSMenuItem(title: "More formats with ffmpeg (brew install ffmpeg)",
+                                      action: nil, keyEquivalent: "")
+                hint.isEnabled = false
+                submenu.addItem(hint)
+            }
+            parent.submenu = submenu
+            menu.addItem(parent)
+        }
+
+        if kind == .image {
+            let parent = NSMenuItem(title: "Resize", action: nil, keyEquivalent: "")
+            let submenu = NSMenu()
+            for size in [3840, 2560, 1920, 1280, 800, 512] {
+                submenu.addItem(ShelfMenuItem(title: "Longest side \(size) px") {
+                    ConversionCenter.shared.run(
+                        "\(source.lastPathComponent) → \(size) px", onSuccess: addToShelf
+                    ) { _, completion in
+                        MediaConverter.resize(source, maxPixel: size, completion: completion)
+                    }
+                })
+            }
+            parent.submenu = submenu
+            menu.addItem(parent)
+        }
+
+        if kind == .image || kind == .video {
+            menu.addItem(ShelfMenuItem(title: "Compress") {
+                ConversionCenter.shared.run(
+                    "Compressing \(source.lastPathComponent)", onSuccess: addToShelf
+                ) { progress, completion in
+                    MediaConverter.compress(source, progress: progress, completion: completion)
+                }
+            })
+        }
     }
 
     // MARK: Behaviour

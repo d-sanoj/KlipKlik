@@ -30,7 +30,10 @@ final class FinderCutMove {
 
     private var copyMonitor: Any?
     private var cutHotKey: CarbonHotKey?
-    private var pasteHotKey: CarbonHotKey?
+    /// Whether this holds a claim on ⌘V with `PasteKeyRouter`, which owns the
+    /// key so the paste stack and Finder image paste can share it.
+    private var claimsPaste = false
+    private static let routerOwner = "finderCutMove"
     private var isArmed = false {
         didSet {
             guard isArmed != oldValue else { return }
@@ -113,16 +116,15 @@ final class FinderCutMove {
 
         // The paste key is only held while there is actually a move pending.
         if active, isArmed {
-            if pasteHotKey == nil {
-                pasteHotKey = CarbonHotKey(
-                    keyCode: UInt32(kVK_ANSI_V),
-                    modifiers: UInt32(cmdKey)
-                ) { [weak self] in
+            if !claimsPaste {
+                claimsPaste = true
+                PasteKeyRouter.shared.claim(Self.routerOwner, priority: .finderCutMove) { [weak self] in
                     self?.performPaste()
                 }
             }
-        } else {
-            pasteHotKey = nil
+        } else if claimsPaste {
+            claimsPaste = false
+            PasteKeyRouter.shared.release(Self.routerOwner)
         }
     }
 
@@ -168,14 +170,17 @@ final class FinderCutMove {
             armedChangeCount = NSPasteboard.general.changeCount
             updateHotKeys()
             Self.log("armed files=\(fileCount) changeCount=\(armedChangeCount ?? -1)"
-                + " pasteHotKey=\(pasteHotKey != nil)")
+                + " claimsPaste=\(claimsPaste)")
         }
     }
 
     private func disarm() {
         isArmed = false
         armedChangeCount = nil
-        pasteHotKey = nil
+        if claimsPaste {
+            claimsPaste = false
+            PasteKeyRouter.shared.release(Self.routerOwner)
+        }
     }
 
     private func handleCopyKey(_ event: NSEvent) {

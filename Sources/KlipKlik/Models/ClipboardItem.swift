@@ -76,6 +76,9 @@ struct ClipboardItem: Identifiable, Equatable, Codable {
     var representations: [[String: Data]]?
     /// Localised name of the app that was frontmost when this was copied.
     let sourceApp: String?
+    /// That app's bundle identifier, for its icon. Optional so pinned items
+    /// archived before it existed still decode.
+    let sourceBundleID: String?
     let createdAt: Date
     /// Identity used to collapse a re-copy of something already in history.
     let fingerprint: String
@@ -85,6 +88,12 @@ struct ClipboardItem: Identifiable, Equatable, Codable {
     /// `write(to:)` knows to rebuild it for anything that asks. See
     /// `compacting(_:)`.
     var restoresTIFF: Bool = false
+    /// Words read out of a copied picture, so searching history finds a
+    /// screenshot by what it says. Filled in shortly after the copy.
+    var recognizedText: String?
+    /// When the item was last copied again, which moves it back to the top.
+    /// Only the history age limit reads it; the row still shows `createdAt`.
+    var touchedAt: Date?
 
     init(
         id: UUID = UUID(),
@@ -94,6 +103,7 @@ struct ClipboardItem: Identifiable, Equatable, Codable {
         colorHex: String? = nil,
         representations: [[String: Data]]?,
         sourceApp: String? = nil,
+        sourceBundleID: String? = nil,
         createdAt: Date = Date(),
         fingerprint: String,
         pinned: Bool = false,
@@ -106,6 +116,7 @@ struct ClipboardItem: Identifiable, Equatable, Codable {
         self.colorHex = colorHex
         self.representations = representations
         self.sourceApp = sourceApp
+        self.sourceBundleID = sourceBundleID
         self.createdAt = createdAt
         self.fingerprint = fingerprint
         self.pinned = pinned
@@ -177,7 +188,11 @@ extension ClipboardItem {
         pattern: "^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
     )
 
-    static func capture(from pasteboard: NSPasteboard, sourceApp: String? = nil) -> ClipboardItem? {
+    static func capture(
+        from pasteboard: NSPasteboard,
+        sourceApp: String? = nil,
+        sourceBundleID: String? = nil
+    ) -> ClipboardItem? {
         guard let items = pasteboard.pasteboardItems, !items.isEmpty else { return nil }
 
         // Honour the nspasteboard.org convention for passwords and transient data.
@@ -242,6 +257,7 @@ extension ClipboardItem {
             colorHex: colorHex,
             representations: representations,
             sourceApp: sourceApp,
+            sourceBundleID: sourceBundleID,
             fingerprint: Self.fingerprint(
                 fileURLs: fileURLs, plain: plain, representations: representations
             )

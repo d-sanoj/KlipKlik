@@ -30,6 +30,44 @@ struct PopupView: View {
     // MARK: Header
 
     private var header: some View {
+        VStack(spacing: 6) {
+            searchField
+            filterRow
+        }
+        .padding(Metrics.headerPadding)
+    }
+
+    /// One icon per kind, the current one lit. Tab and ⇧Tab step through them.
+    private var filterRow: some View {
+        HStack(spacing: 2) {
+            ForEach(KindFilter.allCases) { filter in
+                let isOn = viewModel.kindFilter == filter
+                Button {
+                    viewModel.kindFilter = filter
+                } label: {
+                    Group {
+                        if filter == .all {
+                            Text("All").font(.system(size: 11, weight: .medium))
+                        } else {
+                            Image(systemName: filter.symbol).font(.system(size: 11, weight: .medium))
+                        }
+                    }
+                    .foregroundStyle(isOn ? palette.accent : palette.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: Metrics.filterRowHeight - 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(isOn ? palette.rowSelected : .clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(filter.title)
+            }
+        }
+    }
+
+    private var searchField: some View {
         ZStack(alignment: .leading) {
             TextField("Search", text: $viewModel.query)
                 .textFieldStyle(.plain)
@@ -52,7 +90,6 @@ struct PopupView: View {
                 .padding(.leading, 10)
                 .allowsHitTesting(false)
         }
-        .padding(Metrics.headerPadding)
     }
 
     // MARK: List
@@ -113,7 +150,11 @@ struct PopupView: View {
                 }
             },
             canShelve: viewModel.canShelve(item),
-            onAddToShelf: { viewModel.addToShelf(item) }
+            onAddToShelf: { viewModel.addToShelf(item) },
+            showsSourceIcon: settings.showSourceIcons,
+            onCopyColor: { viewModel.copyColor(item, as: $0) },
+            onPreview: { viewModel.preview(item) },
+            onFloat: { viewModel.float(item) }
         )
         .id(item.id)
     }
@@ -146,10 +187,18 @@ struct PopupView: View {
 
                 FooterIconButton(
                     systemName: "text.viewfinder",
-                    help: "Grab text from the screen",
+                    help: "Grab text or a QR code from the screen",
                     palette: palette
                 ) {
                     viewModel.onGrabText?()
+                }
+
+                FooterIconButton(
+                    systemName: "scroll",
+                    help: "Scrolling screenshot — capture a whole page",
+                    palette: palette
+                ) {
+                    viewModel.onScrollCapture?()
                 }
             }
 

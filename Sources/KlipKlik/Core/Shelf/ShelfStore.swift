@@ -179,6 +179,10 @@ final class ShelfStore: ObservableObject {
     /// only the destination copy remains. Closing a Move shelf never does this.
     func takeOut(items ids: [UUID], from shelfID: UUID) {
         guard let index = shelves.firstIndex(where: { $0.id == shelfID }) else { return }
+        // "Keep items after dragging out" leaves a Copy shelf as it was, so the
+        // same files can be dropped in several places. A Move shelf still
+        // empties: its files have left the place they were parked from.
+        if Settings.shared.shelfKeepAfterDrag, shelves[index].intake == .copy { return }
         let wanted = Set(ids)
         let leaving = shelves[index].items.filter { wanted.contains($0.id) }
         guard !leaving.isEmpty else { return }
