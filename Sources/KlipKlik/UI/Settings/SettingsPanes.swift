@@ -519,6 +519,9 @@ private extension ColorFormat.Components {
 
 struct ShortcutsPane: View {
     @ObservedObject private var permissions = PermissionStatus.shared
+    /// Re-read whenever KlipKlik comes back to the front — the grant is made
+    /// in System Settings.
+    @State private var hasFullDiskAccess = FullDiskAccess.isGranted
 
     private static let global: [(String, String)] = [
         ("Clipboard history", "⌘ ⌘"),
@@ -579,13 +582,30 @@ struct ShortcutsPane: View {
                     Text("Reading text and QR codes off the screen. "
                         + "The colour picker does not need it.")
                 }
+                LabeledContent {
+                    HStack(spacing: 8) {
+                        PermissionBadge(granted: hasFullDiskAccess)
+                        if !hasFullDiskAccess {
+                            Button("Allow…") { FullDiskAccess.requestByHand() }
+                        }
+                    }
+                } label: {
+                    Text("Full Disk Access")
+                    Text("Optional. Only needed to remove leftovers in other apps' protected "
+                        + "folders. macOS never asks for it: Allow opens the list and shows "
+                        + "KlipKlik in Finder — drag it in, switch it on, then reopen KlipKlik.")
+                }
             } header: {
                 Text("Permissions")
             } footer: {
-                Text("Both are tied to the app's signature, so an update can leave a stale entry "
-                    + "in System Settings that looks on but is not. Reset clears it so it can be granted again.")
+                Text("Permissions are tied to the app's signature. A rebuilt or updated KlipKlik "
+                    + "can leave an entry in System Settings that looks on but no longer counts. "
+                    + "Reset clears it; then switch it on again.")
                     .foregroundStyle(.secondary)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            hasFullDiskAccess = FullDiskAccess.isGranted
         }
     }
 

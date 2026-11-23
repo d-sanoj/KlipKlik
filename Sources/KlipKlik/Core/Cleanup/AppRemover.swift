@@ -11,6 +11,9 @@ enum AppRemover {
     struct Report {
         var removed: [URL] = []
         var failed: [(url: URL, reason: String)] = []
+        /// Refused by macOS's privacy protection rather than by file
+        /// permissions. No password gets past that; only Full Disk Access.
+        var protected: [URL] = []
         var freedBytes: Int64 = 0
         var resetPrivacy = false
         /// The admin prompt was cancelled.
@@ -46,6 +49,7 @@ enum AppRemover {
                     report.freedBytes += item.size ?? 0
                 } catch {
                     report.failed.append((item.url, explain(error)))
+                    if isPrivacyRefusal(error) { report.protected.append(item.url) }
                 }
             }
 
@@ -185,10 +189,56 @@ enum AppRemover {
     }
 
     private static func explain(_ error: Error) -> String {
+        isPrivacyRefusal(error)
+            ? "macOS protects this folder. Give KlipKlik Full Disk Access to remove it."
+            : (error as NSError).localizedDescription
+    }
+
+    /// "Operation not permitted" on a folder the user owns: that is macOS
+    /// guarding another app's data (Group Containers, Application Scripts,
+    /// Containers), not a permissions problem a password would solve.
+    static func isPrivacyRefusal(_ error: Error) -> Bool {
         let nsError = error as NSError
         if nsError.domain == NSCocoaErrorDomain, nsError.code == NSFileWriteNoPermissionError {
-            return "macOS protects this folder. Give KlipKlik Full Disk Access to remove it."
+            return true
         }
-        return nsError.localizedDescription
+        let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError
+        return [nsError, underlying].contains {
+            $0?.domain == NSPOSIXErrorDomain && ($0?.code == Int(EPERM) || $0?.code == Int(EACCES))
+        }
+    }
+
+    /// The Full Disk Access list in System Settings.
+    static func openFullDiskAccessSettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!
+        NSWorkspace.shared.open(url)
+    }
+}
+
+/// Full Disk Access, which removing other apps' protected leftovers needs.
+///
+/// Unlike Accessibility and Screen Recording, macOS has no prompt for it and
+/// never lists an app until the user adds it with the + button. So the route
+/// offered is the pane, opened beside a Finder window holding KlipKlik, ready
+/// to be dragged into the list.
+enum FullDiskAccess {
+    /// Whether macOS currently grants it. Read by trying to open a file only
+    /// Full Disk Access can open: no API reports it, and reading does not
+    /// raise a prompt.
+    static var isGranted: Bool {
+        let probe = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/com.apple.TCC/TCC.db")
+        guard let handle = try? FileHandle(forReadingFrom: probe) else { return false }
+        try? handle.close()
+        return true
+    }
+
+    /// Opens the Full Disk Access pane, and shows KlipKlik in Finder so it can
+    /// be dragged straight into the list.
+    static func requestByHand() {
+        AppRemover.openFullDiskAccessSettings()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+        }
     }
 }

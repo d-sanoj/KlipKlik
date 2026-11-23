@@ -98,7 +98,7 @@ struct CacheView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            content
+            content.fillsToolArea()
             if model.hasScanned, !model.items.isEmpty {
                 ToolActionBar {
                     ToolMessage(text: model.message)

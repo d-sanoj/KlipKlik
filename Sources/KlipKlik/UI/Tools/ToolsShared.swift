@@ -56,6 +56,16 @@ struct ToolMessage: View {
     }
 }
 
+extension View {
+    /// Takes all the room between a tool page's top and bottom bars, whatever
+    /// is showing — a table, a progress spinner or an empty state. Without
+    /// it, a short empty state lets the whole column shrink and centre, and
+    /// the filter bar above it jumps to the middle of the window.
+    func fillsToolArea() -> some View {
+        frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 /// "Scanning…" in the middle of the page.
 struct ToolProgress: View {
     let text: String
@@ -104,6 +114,44 @@ enum ToolsAlert {
             }
         } else {
             handler(FloatingAlert.run(alert) == .alertFirstButtonReturn)
+        }
+    }
+}
+
+extension ToolsAlert {
+    /// Explains items macOS would not let go, and offers the two ways past
+    /// it: Full Disk Access for KlipKlik, or removing them by hand in Finder.
+    ///
+    /// There is no "force" beyond this. macOS's protection of other apps'
+    /// data applies to administrators too, so a password prompt would only
+    /// fail the same way.
+    static func explainProtected(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = urls.count == 1
+            ? "macOS protected 1 item"
+            : "macOS protected \(urls.count) items"
+        alert.informativeText = "They are in folders macOS keeps for other apps' data, like Group "
+            + "Containers and Application Scripts. Not even an administrator password gets past "
+            + "that.\n\nmacOS never asks for Full Disk Access on its own: KlipKlik has to be added "
+            + "by hand. Open Full Disk Access shows the list and KlipKlik in Finder — drag it into "
+            + "the list (or press + and choose it), switch it on, then quit and reopen KlipKlik."
+        alert.addButton(withTitle: "Open Full Disk Access")
+        alert.addButton(withTitle: "Show in Finder")
+        alert.addButton(withTitle: "Not Now")
+
+        let handle: (NSApplication.ModalResponse) -> Void = { response in
+            switch response {
+            case .alertFirstButtonReturn: FullDiskAccess.requestByHand()
+            case .alertSecondButtonReturn: NSWorkspace.shared.activateFileViewerSelecting(urls)
+            default: break
+            }
+        }
+        if let window, window.isVisible {
+            alert.beginSheetModal(for: window, completionHandler: handle)
+        } else {
+            handle(FloatingAlert.run(alert))
         }
     }
 }

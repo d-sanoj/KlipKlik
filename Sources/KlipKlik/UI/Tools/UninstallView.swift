@@ -181,6 +181,7 @@ final class UninstallModel: ObservableObject {
             let remaining = Set(leftovers.map(\.id))
             checked = checked.intersection(remaining)
             message = Self.summary(report, name: target.name)
+            ToolsAlert.explainProtected(report.protected)
             if removesApp, report.removed.contains(where: { url in
                 chosen.contains { $0.kind == .appBundle && $0.url == url }
             }) {
@@ -358,6 +359,7 @@ struct UninstallView: View {
                     } description: {
                         Text(model.message ?? "\(target.name) keeps no files outside its app.")
                     }
+                    .fillsToolArea()
                 } else {
                     LeftoverTable(items: model.leftovers, checked: $model.checked)
                 }
@@ -584,6 +586,7 @@ final class OrphanModel: ObservableObject {
             message = "Moved \(report.removed.count) item\(report.removed.count == 1 ? "" : "s") "
                 + "(\(formattedBytes(report.freedBytes))) to the Trash."
                 + (report.failed.isEmpty ? "" : " \(report.failed.count) could not be moved.")
+            ToolsAlert.explainProtected(report.protected)
         }
     }
 }
@@ -593,7 +596,7 @@ struct OrphanView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            content
+            content.fillsToolArea()
             if model.hasScanned, !model.groups.isEmpty {
                 ToolActionBar {
                     ToolMessage(text: model.message)

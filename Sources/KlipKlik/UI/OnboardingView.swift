@@ -33,6 +33,9 @@ struct OnboardingView: View {
     /// open* can be told apart from one that was already there.
     @State private var trustedAtOpen = AccessibilityPermission.isTrusted
     @State private var couldRecordAtOpen = TextGrab.isPermitted
+    /// Full Disk Access has no live status to observe, so it is re-read each
+    /// time KlipKlik comes back from System Settings.
+    @State private var hasFullDiskAccess = FullDiskAccess.isGranted
 
     private var palette: Palette { .resolve(colorScheme) }
 
@@ -67,7 +70,7 @@ struct OnboardingView: View {
 
             grant(
                 title: "Accessibility",
-                detail: "Double-tap ⌘, auto-paste, ⌘ X cut-and-move",
+                detail: "Double-tap ⌘, auto-paste, snippets, paste stack, Finder keys",
                 granted: isTrusted,
                 action: {
                     didAttemptGrant = true
@@ -77,7 +80,7 @@ struct OnboardingView: View {
 
             grant(
                 title: "Screen Recording",
-                detail: "Grab text off the screen",
+                detail: "Read text and QR codes off the screen",
                 granted: canRecordScreen,
                 action: {
                     didAttemptGrant = true
@@ -85,9 +88,20 @@ struct OnboardingView: View {
                 }
             )
 
-            Text("Screen Recording asks right here. Accessibility can only be "
-                + "switched on by you in System Settings — macOS gives apps no way "
-                + "to grant it. Both take effect after a relaunch.")
+            grant(
+                title: "Full Disk Access",
+                detail: "Optional — remove leftovers in other apps' protected folders",
+                granted: hasFullDiskAccess,
+                action: {
+                    didAttemptGrant = true
+                    FullDiskAccess.requestByHand()
+                }
+            )
+
+            Text("Screen Recording asks right here. Accessibility and Full Disk Access "
+                + "can only be switched on by you in System Settings — Allow opens the "
+                + "right page. For Full Disk Access, KlipKlik also appears in Finder: "
+                + "drag it into the list. All of them take effect after a relaunch.")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -126,6 +140,9 @@ struct OnboardingView: View {
         // The status changes in System Settings, outside this window — see
         // `PermissionStatus`, which watches for the return trip. The window
         // controller starts and stops it.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            hasFullDiskAccess = FullDiskAccess.isGranted
+        }
     }
 
     private var primaryButtonTitle: String {
@@ -136,11 +153,11 @@ struct OnboardingView: View {
     private var introText: String {
         switch mode {
         case .welcome:
-            return "Two permissions unlock the rest. You can skip them and grant "
-                + "them later in Settings."
+            return "Two permissions unlock the rest, and a third is optional. You can "
+                + "skip them and grant them later in Settings ▸ Shortcuts & Permissions."
         case .permissions:
-            return "macOS ties each grant to the app's code signature, so updating "
-                + "KlipKlik can quietly retire it. Nothing else is wrong."
+            return "macOS ties each grant to the app's code signature, so a KlipKlik "
+                + "built or signed differently starts without them. Nothing else is wrong."
         }
     }
 
@@ -258,7 +275,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         PermissionStatus.shared.end()
         // Deferred, because dropping the policy while the close is still in
         // flight leaves the Dock tile behind.
-        DispatchQueue.main.async { NSApp.setActivationPolicy(.accessory) }
+        DispatchQueue.main.async { [weak self] in
+            dropDockIconUnlessWindowsRemain(except: self?.window)
+        }
         onClose?()
     }
 

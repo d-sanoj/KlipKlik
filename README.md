@@ -78,6 +78,8 @@ inherits them.
 | `./Scripts/build_app.sh` | Debug build, faster to compile |
 | `./Scripts/make_dmg.sh` | Package a disk image |
 | `./Scripts/make_icon.sh` | Rebuild the icon after editing `Resources/AppIcon.png` |
+| `./Scripts/make_signing_cert.sh` | Once per Mac: a local signing certificate, so permissions survive rebuilds |
+| `./Scripts/test.sh` | Run the unit tests |
 | `KLIPKLIK_ICON_RADIUS=0.12` | Tighter icon corners (default `0.18`) |
 | `KLIPKLIK_SIGN_IDENTITY="…"` | Sign with a real identity so permissions survive rebuilds |
 | `KLIPKLIK_DEBUG=1` | Log every clipboard capture to stderr |
@@ -224,8 +226,10 @@ each one its own **Open Settings…** and **Reset permission** button.
 > permissions to the code signature — which changes on every rebuild, silently
 > invalidating the grant. The entry in System Settings still looks enabled but
 > no longer matches, and toggling it off and on will not fix it; only a reset
-> will. Set `KLIPKLIK_SIGN_IDENTITY` to a real signing identity to avoid this
-> entirely. Screen Recording additionally needs a relaunch to take effect.
+> will. Run `./Scripts/make_signing_cert.sh` once to create a local signing
+> certificate — `build_app.sh` then signs every build with it, so grants
+> survive rebuilds — or set `KLIPKLIK_SIGN_IDENTITY` to a real signing
+> identity. Screen Recording additionally needs a relaunch to take effect.
 
 ## Development
 

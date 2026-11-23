@@ -45,7 +45,7 @@ struct HomebrewView: View {
                 filterBar
                 Divider()
             }
-            content
+            content.fillsToolArea()
             if Homebrew.isInstalled { actionBar }
         }
         .toolbar {
@@ -396,6 +396,7 @@ struct PortsView: View {
                          ? "No program on this Mac is waiting for connections."
                          : "No port or program matches “\(model.query)”.")
                 }
+                .fillsToolArea()
             } else {
                 Table(model.filtered) {
                     TableColumn("Port") { port in

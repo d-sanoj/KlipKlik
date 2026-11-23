@@ -141,3 +141,23 @@ import Testing
         #expect(BrewInstalledParser.parse(Data("Error".utf8), outdated: []) == nil)
     }
 }
+
+@Suite struct PrivacyRefusalTests {
+    @Test func recognisesMacOSProtection() {
+        let cocoa = NSError(domain: NSCocoaErrorDomain, code: NSFileWriteNoPermissionError)
+        #expect(AppRemover.isPrivacyRefusal(cocoa))
+
+        let wrapped = NSError(
+            domain: NSCocoaErrorDomain, code: NSFileWriteUnknownError,
+            userInfo: [NSUnderlyingErrorKey: NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM))]
+        )
+        #expect(AppRemover.isPrivacyRefusal(wrapped))
+    }
+
+    @Test func otherFailuresAreNotProtection() {
+        let missing = NSError(domain: NSCocoaErrorDomain, code: NSFileNoSuchFileError)
+        #expect(!AppRemover.isPrivacyRefusal(missing))
+        let busy = NSError(domain: NSPOSIXErrorDomain, code: Int(EBUSY))
+        #expect(!AppRemover.isPrivacyRefusal(busy))
+    }
+}

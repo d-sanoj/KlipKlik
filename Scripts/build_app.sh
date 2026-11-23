@@ -62,8 +62,9 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 # "Reset permission" afterwards to clear the stale grant and re-approve.
 #
 # Set KLIPKLIK_SIGN_IDENTITY to a real code-signing identity to make the grant
-# survive rebuilds.
-IDENTITY="${KLIPKLIK_SIGN_IDENTITY:-}"
+# survive rebuilds. Without it, the local certificate Scripts/make_signing_cert.sh
+# creates is used when this Mac has one.
+IDENTITY="${KLIPKLIK_SIGN_IDENTITY:-KlipKlik Local Signing}"
 
 if [ -n "$IDENTITY" ] && security find-identity -v -p codesigning | grep -qF "$IDENTITY"; then
     echo "==> Signing as '$IDENTITY'"
