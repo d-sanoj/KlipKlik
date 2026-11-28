@@ -167,13 +167,23 @@ final class PlinthRunner {
     /// read it (WebM, MKV), which leaves the bar indeterminate.
     private static func duration(of url: URL) -> Double {
         let done = DispatchSemaphore(value: 0)
-        var seconds = 0.0
+        let result = DurationBox()
         Task {
-            seconds = (try? await AVURLAsset(url: url).load(.duration).seconds) ?? 0
+            let seconds = (try? await AVURLAsset(url: url).load(.duration).seconds) ?? 0
+            result.set(seconds)
             done.signal()
         }
         _ = done.wait(timeout: .now() + 3)
+        let seconds = result.value
         return seconds.isFinite && seconds > 0 ? seconds : 0
+    }
+
+    /// Hands the length back from the task that loads it.
+    private final class DurationBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored = 0.0
+        var value: Double { lock.withLock { stored } }
+        func set(_ seconds: Double) { lock.withLock { stored = seconds } }
     }
 }
 
