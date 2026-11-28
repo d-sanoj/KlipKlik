@@ -61,6 +61,7 @@ struct SettingsView: View {
             case .storage: StoragePane(store: store)
             case .shelf: ShelfPane()
             case .finder: FinderPane()
+            case .plinth: PlinthPane()
             case .appearance: AppearancePane()
             case .shortcuts: ShortcutsPane()
             case .uninstall: UninstallView(model: tools.uninstall)

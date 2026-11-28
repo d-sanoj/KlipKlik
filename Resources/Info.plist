@@ -25,7 +25,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>KlipKlik asks Finder which folder is open, to save a pasted picture there, and what is selected, to send it to a shelf.</string>
+	<string>KlipKlik asks Finder which folder is open, to save a pasted picture there, and what is selected, to send it to a shelf or act on it from the Plinth command bar.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>MIT Licensed</string>
 	<key>NSSupportsAutomaticTermination</key>

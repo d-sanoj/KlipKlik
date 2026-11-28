@@ -26,6 +26,7 @@ pointer is — type to search, ↩ to paste.
 - **Colour picker** — sample any pixel on screen, get `#RRGGBB` on the clipboard.
 - **Screen text grab** — drag a box over anything readable and copy the *text*, indentation and blank lines intact.
 - **⌘ X in Finder** — Windows-style cut and move for files.
+- **Plinth command bar** — a bar docked under Finder: type “convert to 1080p mp4” or “rename to trip-{n}” and it acts on the selection, after showing you what it will do. [More below](#plinth-command-bar).
 - **Menu bar clock** — the time in any zone in the world, with its country's flag.
 - **Ignored apps** — per-app opt-out; password managers are skipped automatically.
 - **Pinned items persist** — kept encrypted on disk until you clear them; everything else is wiped on quit.
@@ -186,6 +187,92 @@ uncommon one.
 **Settings ▸ History & Data** shows all four figures — memory, cache, archive, and
 bytes staged for shelves — and clears each independently.
 
+## Plinth command bar
+
+A bar that sits under the front Finder window and does things to the selected
+files when you say what: *convert to 1080p mp4*, *half size*, *zip as Photos*,
+*replace IMG_ with Rome*, *combine into one pdf*.
+
+- **⌥ ⌘ K** in Finder puts the cursor in the bar; **esc** gives the keyboard back.
+- **Zip, JPG, PNG, PDF** are one-tap chips that run without any AI.
+- Everything else goes to Apple's **on-device model** (Foundation Models,
+  macOS 26, Apple Intelligence on). Nothing leaves the Mac.
+- Before anything runs you see what will be **created, renamed or moved to the
+  Trash**, and the exact commands. Renames and trashing originals need a
+  second yes (**⌘ ↩**). Nothing is ever overwritten.
+- Video needs **ffmpeg**. If it's missing, Plinth offers to run
+  `brew install ffmpeg` and shows you that command first. It never installs
+  Homebrew itself.
+
+**Settings ▸ Plinth Command Bar** turns it on or off, chooses between "under
+every Finder window" and "only after ⌥⌘K", and shows whether Apple
+Intelligence, ffmpeg and Finder access are ready.
+
+### What it can do (v0.1)
+
+| Ask for | Runs |
+| --- | --- |
+| Convert video to MP4, MOV, WebM, MKV, GIF; audio to MP3, M4A, WAV; at 480p…4K | `ffmpeg` |
+| Compress video (HEVC), optionally to a height | `ffmpeg` |
+| Convert pictures to JPEG, PNG, HEIC, TIFF, GIF, BMP, PDF | `sips` |
+| Resize by percent, longest side, width or height; compress pictures | `sips` |
+| Zip, unzip | `zip`, `ditto` |
+| Rename: `{name}`, `{n}`, `{date}`, find and replace, prefix, suffix, case | Foundation |
+| Merge PDFs in Finder's order | PDFKit |
+
+### How it stays safe
+
+The model never writes a command. It fills in a typed `@Generable` struct —
+an action from a fixed list plus a few optional fields — and
+`PlinthIntentValidator` checks every field again (known formats only, numbers
+in range, file names that are file names). `PlinthCommandBuilder` then builds
+each program's argument list itself; programs are started directly by path,
+never through a shell, so no file name or request can become a command.
+
+If Apple Intelligence is off, not supported or still downloading, the bar
+says so and the instant chips keep working. Other back ends (Ollama, an API)
+can slot in behind `PlinthInterpreter` later.
+
+### Status
+
+v0.1, on the `claude/plinth-command-bar-626mko` branch. The command builders,
+validator, renamer and placement are unit tested; the Finder tracking, the
+panel and the Foundation Models calls need a run on a Mac with macOS 26.
+
+### Tests and the prompt eval
+
+```
+./Scripts/test.sh                                        # unit tests, any Mac
+PLINTH_EVAL=1 swift test --filter PlinthLiveEval         # 56 requests against the real model
+```
+
+The eval (`Tests/KlipKlikTests/Plinth/PlinthEvalCases.swift`) is a list of
+requests, selections and the commands that count as right, refusals
+included. Without `PLINTH_EVAL=1` it still checks that every expected answer
+is one the builder can carry out.
+
+### Distribution
+
+Plinth is why KlipKlik stays outside the Mac App Store: it asks Finder for
+its selection over Apple Events and starts `ffmpeg`, `sips`, `zip` and
+`ditto`, none of which a sandboxed app may do for arbitrary files. The app is
+not sandboxed; it is signed with the hardened runtime and the one Apple
+Events entitlement it already had.
+
+To ship it to other Macs, sign with a **Developer ID Application**
+certificate and notarize:
+
+```
+KLIPKLIK_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./Scripts/build_app.sh
+ditto -c -k --keepParent build/KlipKlik.app KlipKlik.zip
+xcrun notarytool submit KlipKlik.zip --keychain-profile notary --wait
+xcrun stapler staple build/KlipKlik.app
+```
+
+Notarization also wants a secure timestamp: add `--timestamp` to the
+`codesign` flags in `build_app.sh` for release builds. Store the notary
+credentials once with `xcrun notarytool store-credentials notary`.
+
 ## Shortcuts
 
 | | |
@@ -199,6 +286,7 @@ bytes staged for shelves — and clears each independently.
 | `⌥ P` | Pin / unpin |
 | `⌥ S` | Put the selected item's files on a shelf |
 | `⌥ ⌘ S` | New shelf |
+| `⌥ ⌘ K` | In Finder: the Plinth command bar |
 | `⌘ A` | Select all files on the focused shelf |
 | `⌘ ⌫` | Delete item |
 | `⌥ ⌘ ⌫` | Clear history (keeps pinned) |
@@ -215,6 +303,7 @@ bytes staged for shelves — and clears each independently.
 | Shelf "Move to Front Finder Window" | Accessibility |
 | Shelves, the drop target, drag in and out | — |
 | Screen text grab | Screen Recording |
+| Plinth command bar | Automation for Finder (asked once); Accessibility only makes it follow windows faster |
 
 Grant them in **System Settings ▸ Privacy & Security**.
 
@@ -241,6 +330,7 @@ each one its own **Open Settings…** and **Reset permission** button.
 Sources/KlipKlik/
   AppDelegate.swift    Menu bar item, clock, status menu
   Core/                Clipboard monitor, history, capture tools, settings
+  Plinth/              The Finder command bar: Core (actions, validation, builders), AI, Run, Finder, UI
   Core/Shelf/          Drag detection, shelf model, storage, file actions
   UI/                  Popup, preferences, theme
   UI/Shelf/            Shelf windows, drop target, tiles, drag source
