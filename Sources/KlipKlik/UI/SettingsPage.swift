@@ -7,7 +7,7 @@ import SwiftUI
 /// one glance down the sidebar, which is where people look for it.
 enum SettingsPage: String, CaseIterable, Identifiable {
     case general, snippets, ignored, storage
-    case shelf, finder
+    case shelf, finder, plinth
     case uninstall, leftovers, cache, homebrew, ports, fileUsage
     case appearance, shortcuts
 
@@ -27,7 +27,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     var group: Group {
         switch self {
         case .general, .snippets, .ignored, .storage: return .clipboard
-        case .shelf, .finder: return .workspace
+        case .shelf, .finder, .plinth: return .workspace
         case .uninstall, .leftovers, .cache, .homebrew, .ports, .fileUsage: return .tools
         case .appearance, .shortcuts: return .app
         }
@@ -41,6 +41,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .storage: return "History & Data"
         case .shelf: return "Shelf"
         case .finder: return "Finder"
+        case .plinth: return "Plinth Command Bar"
         case .uninstall: return "Uninstall Cleaner"
         case .leftovers: return "Leftover Files"
         case .cache: return "Cache Cleaner"
@@ -61,6 +62,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .storage: return "Your clipboard history: what KlipKlik keeps, where, and clearing it. Not your Mac's disk space — that is Cache Cleaner."
         case .shelf: return "Floating trays you drop files into and drag back out."
         case .finder: return "Extra keys for Finder."
+        case .plinth: return "Say what to do with the selected files, under every Finder window."
         case .uninstall, .leftovers, .cache, .homebrew, .ports, .fileUsage: return ""
         case .appearance: return "How the popup looks."
         case .shortcuts: return "Every key KlipKlik answers to, and the permissions behind them."
@@ -75,6 +77,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .storage: return "clock.arrow.circlepath"
         case .shelf: return "tray.2.fill"
         case .finder: return "folder.fill"
+        case .plinth: return "command.square.fill"
         case .uninstall: return "trash.fill"
         case .leftovers: return "doc.badge.ellipsis"
         case .cache: return "sparkles"
@@ -95,6 +98,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .storage: return Color(hex: 0x636366)
         case .shelf: return Color(hex: 0x0A84FF)
         case .finder: return Color(hex: 0x30B0C7)
+        case .plinth: return Color(hex: 0xBF5AF2)
         case .uninstall: return Color(hex: 0xFF3B30)
         case .leftovers: return Color(hex: 0xFF9F0A)
         case .cache: return Color(hex: 0x34C759)
@@ -119,6 +123,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .storage: return ["storage", "clear", "pinned", "history", "data", "memory", "uninstall klipklik"]
         case .shelf: return ["drag", "drop", "shake", "tray", "files"]
         case .finder: return ["cut", "rename", "f2", "picture", "png", "paste"]
+        case .plinth: return ["command", "convert", "resize", "compress", "zip", "video", "ffmpeg", "ai", "apple intelligence"]
         case .uninstall: return ["remove", "delete", "app", "trash", "removed", "leftover"]
         case .leftovers: return ["orphan", "removed", "junk"]
         case .cache: return ["clean", "space", "disk", "chatgpt", "claude", "xcode", "npm"]

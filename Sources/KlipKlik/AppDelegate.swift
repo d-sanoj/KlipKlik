@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var pasteStack: PasteStack!
     private let snippets = SnippetExpander()
     private let finderExtras = FinderExtras()
+    /// The command bar under Finder. Its own settings switch it on and off.
+    private var plinth: PlinthController?
     private let removalWatcher = AppRemovalWatcher()
     private var statusItem: NSStatusItem!
     /// Built on first use. Constructing it eagerly cost a window, an
@@ -189,6 +191,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .store(in: &cancellables)
 
         Homebrew.shared.start()
+
+        MainActor.assumeIsolated {
+            let controller = PlinthController()
+            controller.start()
+            plinth = controller
+        }
     }
 
     private func togglePasteStack() {
@@ -235,6 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         doubleTap.stop()
         finderCutMove.stop()
         finderExtras.stop()
+        MainActor.assumeIsolated { plinth?.stop() }
         snippets.stop()
         removalWatcher.stop()
         pasteStack?.stop()
